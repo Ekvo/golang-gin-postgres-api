@@ -4,19 +4,22 @@ package common
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
-	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const SecretKey = "qwert12345"
 
-// генерирует токен для использования в Request header
-func GenToken(id int) (string, error) {
+var incorrectToken = errors.New("token not valid")
+
+// GenToken - генерирует токен для использования в Request header
+func GenToken(id uint) (string, error) {
 	claims := jwt.MapClaims{
 		"id":          id,
 		"exploretion": time.Now().Add(60 * time.Minute).Unix(),
@@ -25,12 +28,62 @@ func GenToken(id int) (string, error) {
 	return jwtToken.SignedString([]byte(SecretKey))
 }
 
+// Indeficator - для получения 'id' из jwt.MapClaims (для удобства)
+func Indeficator[T comparable](token *jwt.Token, key string) (T, error) {
+	var value T
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return value, incorrectToken
+	}
+	value, ok = claims[key].(T)
+	if !ok {
+		return value, incorrectToken
+	}
+	return value, nil
+}
+
+// ошибка для защиты от некоректного использования:
+// getFieldName(structNamespace string) (string, error)
+var incorrectStructNamespace = errors.New("incorrect struct namespace")
+
+// FiledValidator - для создания кастомных функций обработки ошибок
+// объекта validator.FieldError
+type FiledValidator struct {
+	validator.FieldError
+}
+
+// получении имени поля из validator.FieldError StructNamespace()
+func (fv FiledValidator) FieldName() (string, error) {
+	structNamespace := fv.StructNamespace()
+	n := len(structNamespace)
+	if n < 3 ||
+		structNamespace[0] == '.' ||
+		structNamespace[n-1] == '.' {
+		return "", incorrectStructNamespace
+	}
+	for i := n - 1; i > -1; i-- {
+		if structNamespace[i] == '.' {
+			return structNamespace[i+1 : n], nil
+		}
+	}
+	return "", incorrectStructNamespace
+}
+
 // CommonError - тип для более подробного описания ошибок
 type CommonError struct {
 	DataError map[string]any `json:"errors"`
 }
 
-const unknown = "unknown"
+// формат записи ошибки, обертывая в объект
+func NewError(key string, obj any) CommonError {
+	storeErros := map[string]any{
+
+		/// переделать !!!!!!!!!!!!!!!
+		key: obj.(error).Error(),
+	}
+
+	return CommonError{DataError: storeErros}
+}
 
 // обработка ошибок полученных во время выполнения 'context.Bind' из 'gin' framework
 func NewDataErrorValidator(err error) CommonError {
@@ -38,11 +91,12 @@ func NewDataErrorValidator(err error) CommonError {
 	dataErr := err.(validator.ValidationErrors)
 
 	for _, fe := range dataErr {
-		param := fe.Param()
-		if len(param) == 0 {
-			param = unknown
+		info := fe.Param()
+		if len(info) == 0 {
+			fv := FiledValidator{fe}
+			info, _ = fv.FieldName()
 		}
-		storeErros[fe.Field()] = fmt.Sprintf("{%v:%v}", fe.Tag(), param)
+		storeErros[fe.Field()] = fmt.Sprintf("{%v:%v}", fe.Tag(), info)
 	}
 	return CommonError{storeErros}
 }
