@@ -49,15 +49,21 @@ func (ucv *UserCreateValidator) Bind(c *gin.Context) error {
 	ucv.uModel.Password = ucv.User.Password
 	_ = ucv.uModel.HashPassword()
 	ucv.uModel.FirstName = ucv.User.FirstName
+	if len(ucv.User.LastName) > 0 {
+		ucv.uModel.LastName = &ucv.User.LastName
+	}
+	if len(ucv.User.Phone) > 0 {
+		ucv.uModel.Phone = &ucv.User.Phone
+	}
 	ucv.uModel.Email = ucv.User.Email
 	ucv.uModel.Access = ucv.User.Access
-	ucv.uModel.LastName = &ucv.User.LastName
-	ucv.uModel.Phone = &ucv.User.Phone
-	ucv.uModel.Image = &ucv.User.Image
-	ucv.uModel.Bio = &ucv.User.Bio
-
-	createTime := time.Now()
-	ucv.uModel.CreatedAt = createTime
+	if len(ucv.User.Image) > 0 {
+		ucv.uModel.Image = &ucv.User.Image
+	}
+	if len(ucv.User.Bio) > 0 {
+		ucv.uModel.Bio = &ucv.User.Bio
+	}
+	ucv.uModel.CreatedAt = time.Now()
 	return nil
 }
 

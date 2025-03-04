@@ -1,21 +1,38 @@
 package users
 
 import (
-	"context"
-	"net/http"
-	"time"
-
+	"errors"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/common"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang-jwt/jwt/v5/request"
-
-	"github.com/Ekvo/golang-gin-postgres-api/internal/common"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
+	"net/http"
 )
+
+var ErrUsersautorizationToken = errors.New("token from Authorization - incorrect")
+
+// lenBearer - длина prefix в token
+const lenBearer = 7 // "Bearer "
+
+// truncateBearerToken - удаляем prefix из 'token'
+// ищем "Bearer " и удаляем или ошибка
+func truncateBearerToken(token string) (string, error) {
+	if len(token) > lenBearer && token[:lenBearer] == "Bearer " {
+		return token[lenBearer:], nil
+	}
+	return "", ErrUsersautorizationToken
+}
+
+// AuthHeaderExtractor - для получения token из header с помощью 'truncateBearerToken'(см. выше)
+var AuthHeaderExtractor = &request.PostExtractionFilter{
+	Extractor: request.HeaderExtractor{"Authorization"},
+	Filter:    truncateBearerToken,
+}
 
 // AuthExtractor - набор экстракторов (при необходимости можно расширить пул)
 var AuthExtractor = &request.MultiExtractor{
-	request.HeaderExtractor{"Authorization"},
+	AuthHeaderExtractor,
 }
 
 // ключи для записи в 'gin.Context.Keys'
@@ -32,17 +49,14 @@ func SetFlagsContext(c *gin.Context, uModel source.UserModel) {
 	c.Set(userModel, uModel)
 }
 
-// DataForContextUserModel -  если id_user!=0 получение данных пользователя
+// DataForContextUserModel -  если 'id_user != 0' получение данных пользователя
 // и записи в 'gin.Context.Keys'
 // с возможностью выбирать базу данных
 func DataForContextUserModel(c *gin.Context, db source.UserApprove, id_user uint) error {
 	var uModel source.UserModel
 	if id_user != 0 {
 		var err error = nil
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Second)
-		defer cancel()
-
-		uModel, err = db.FindOneUserByField(ctx, source.UserModel{ID: id_user}, source.FlagID)
+		uModel, err = db.FindOneUserByField(c.Request.Context(), source.UserModel{ID: id_user}, source.FlagID)
 		if err != nil {
 			return err
 		}
@@ -64,14 +78,13 @@ func Autorization(db source.UserApprove) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, common.NewError("autorization", errToken))
 			return
 		}
-		user_id, errID := common.Indeficator[uint](token, "id")
-		if errID != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, common.NewError("autorization", errID))
+		user_id, err := common.Indeficator(token, "id")
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, common.NewError("autorization", err))
 			return
 		}
-		errDB := DataForContextUserModel(c, db, user_id)
-		if errDB != nil {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, common.NewError("datab_ase", errDB))
+		if err := DataForContextUserModel(c, db, uint(user_id)); err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, common.NewError("data_base", err))
 			return
 		}
 	}

@@ -29,16 +29,14 @@ func GenToken(id uint) (string, error) {
 }
 
 // Indeficator - для получения 'id' из jwt.MapClaims (для удобства)
-func Indeficator[T comparable](token *jwt.Token, key string) (T, error) {
-	var value T
+func Indeficator(token *jwt.Token, key string) (int, error) {
+	var value int
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok || !token.Valid {
 		return value, incorrectToken
 	}
-	value, ok = claims[key].(T)
-	if !ok {
-		return value, incorrectToken
-	}
+	value = int(claims[key].(float64))
+
 	return value, nil
 }
 
@@ -69,19 +67,18 @@ func (fv FiledValidator) FieldName() (string, error) {
 	return "", incorrectStructNamespace
 }
 
+// ErrCommonUnexpectedType - маркировка ошибкок приведения типов
+// во время использования 'func (c *Context) MustGet(key string) any'
+var ErrCommonUnexpectedType = errors.New("model - unexpected type")
+
 // CommonError - тип для более подробного описания ошибок
 type CommonError struct {
 	DataError map[string]any `json:"errors"`
 }
 
 // формат записи ошибки, обертывая в объект
-func NewError(key string, obj any) CommonError {
-	storeErros := map[string]any{
-
-		/// переделать !!!!!!!!!!!!!!!
-		key: obj.(error).Error(),
-	}
-
+func NewError(key string, err error) CommonError {
+	storeErros := map[string]any{key: err.Error()}
 	return CommonError{DataError: storeErros}
 }
 
@@ -111,4 +108,13 @@ func Bind(c *gin.Context, obj any) error {
 func HashData(line string) string {
 	hashLine := sha256.Sum256([]byte(line))
 	return hex.EncodeToString(hashLine[:])
+}
+
+// IsValidParam - проверяет наличие значение по ключу в 'gin.Context.Params'
+func IsValidParam(c *gin.Context, key string) (string, bool) {
+	val := c.Param(key)
+	if len(val) == 0 {
+		return "", false
+	}
+	return val, true
 }

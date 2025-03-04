@@ -2,14 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/users"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	"log"
 	"net/http"
-
-	"github.com/Ekvo/golang-gin-postgres-api/internal/common"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/users"
+	"time"
 )
 
 func main() {
@@ -25,37 +24,24 @@ host=127.0.0.1 port=5432 user=postgres password=1234567 dbname=zephyr sslmode=di
 		}
 	}()
 
-	s := source.NewSQLSource(db)
+	store := source.NewSQLSource(db)
 
-	r := gin.Default()
-	first := r.Group("/zephyr")
-	users.UserBeforeRegister(first.Group("/connect"), s)
-	/*
-		r.GET("/", func(c *gin.Context) {
-			id := c.Request.URL.Query().Get("id")
-			idInt, _ := strconv.Atoi(id)
-			ctx, cancel := context.WithTimeout(c.Request.Context(), 100*time.Second)
-			defer cancel()
+	router := gin.Default()
 
-			u, err := s.FindOneUser(ctx, source.UserModel{ID: uint(idInt)})
-			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"user": u})
-		})
-	*/
-	r.POST("/zephyr", func(c *gin.Context) {
-		m := users.NewUserCreateValidator()
-		if err := m.Bind(c); err != nil {
-			c.JSON(http.StatusBadRequest, common.NewDataErrorValidator(err))
-			return
-		}
+	first := router.Group("/zephyr")
+	users.UserBeforeRegister(first.Group("/connect"), store)
+	first.Use(users.Autorization(store))
+	users.UserAfterRegister(first.Group("/user"), store)
+	users.SpeakerFolower(first.Group("/profile"), store)
 
-		c.JSON(http.StatusOK, gin.H{"message": m.User})
-	})
+	srv := &http.Server{
+		Addr:         "127.0.0.1:8000",
+		Handler:      router,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+	}
 
-	if err := r.Run("127.0.0.1:8000"); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("server error - %w", err)
 	}
 }
