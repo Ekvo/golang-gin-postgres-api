@@ -2,20 +2,14 @@ package users
 
 import (
 	"errors"
+	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
+	"github.com/gin-gonic/gin"
 	"time"
 
-	"github.com/gin-gonic/gin"
-
-	"github.com/Ekvo/golang-gin-postgres-api/internal/common"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
 )
 
 var ErrUsersValidatorPassword = errors.New("invalid password")
-
-type UserValidator interface {
-	Bind(c *gin.Context) error
-	Model() source.UserModel
-}
 
 type UserCreateValidator struct {
 	User struct {
@@ -29,7 +23,7 @@ type UserCreateValidator struct {
 		Image     string `form:"image" json:"image" binding:"omitempty,url"`
 		Bio       string `form:"biography" json:"biography" binding:"omitempty,max=512"`
 	} `json:"user_update"`
-	uModel source.UserModel `json:"-"`
+	uModel models.UserModel `json:"-"`
 }
 
 // Если необходимо добавить значения по-умолчанию
@@ -37,7 +31,7 @@ func NewUserCreateValidator() *UserCreateValidator {
 	return &UserCreateValidator{}
 }
 
-func (ucv *UserCreateValidator) Model() source.UserModel {
+func (ucv *UserCreateValidator) Model() models.UserModel {
 	return ucv.uModel
 }
 
@@ -46,8 +40,10 @@ func (ucv *UserCreateValidator) Bind(c *gin.Context) error {
 		return err
 	}
 	ucv.uModel.Login = ucv.User.Login
-	ucv.uModel.Password = ucv.User.Password
-	_ = ucv.uModel.HashPassword()
+	if ucv.User.Password != common.TrickPassword {
+		ucv.uModel.Password = ucv.User.Password
+		_ = ucv.uModel.HashPassword()
+	}
 	ucv.uModel.FirstName = ucv.User.FirstName
 	if len(ucv.User.LastName) > 0 {
 		ucv.uModel.LastName = &ucv.User.LastName
@@ -64,15 +60,16 @@ func (ucv *UserCreateValidator) Bind(c *gin.Context) error {
 		ucv.uModel.Bio = &ucv.User.Bio
 	}
 	ucv.uModel.CreatedAt = time.Now()
+
 	return nil
 }
 
 type UserConnectLoginValidator struct {
 	UserLogin struct {
-		Login    string `form:"login" json:"login" binding:"required,alphanum,min=1,max=128"`
+		Login    string `form:"login" json:"login" binding:"required,alphanum,min=2,max=128"`
 		Password string `form:"password" json:"password" binding:"required,min=8,max=255"`
 	} `json:"user_connect_with_login"`
-	uModel source.UserModel `json:"-"`
+	uModel models.UserModel `json:"-"`
 }
 
 // Если необходимо добавить значения по-умолчанию
@@ -80,7 +77,7 @@ func NewUserConnectLoginValidator() *UserConnectLoginValidator {
 	return &UserConnectLoginValidator{}
 }
 
-func (ulv *UserConnectLoginValidator) Model() source.UserModel {
+func (ulv *UserConnectLoginValidator) Model() models.UserModel {
 	return ulv.uModel
 }
 
@@ -98,7 +95,7 @@ type UserConnectPhoneValidator struct {
 		Phone    string `form:"phone" json:"phone" binding:"required,e164"`
 		Password string `form:"password" json:"password" binding:"required,min=8max=255"`
 	} `json:"user_connect_wiht_phone"`
-	uModel source.UserModel `json:"-"`
+	uModel models.UserModel `json:"-"`
 }
 
 // Если необходимо добавить значения по-умолчанию
@@ -106,7 +103,7 @@ func NewUserConnectPhoneValidator() *UserConnectPhoneValidator {
 	return &UserConnectPhoneValidator{}
 }
 
-func (upv *UserConnectPhoneValidator) Model() source.UserModel {
+func (upv *UserConnectPhoneValidator) Model() models.UserModel {
 	return upv.uModel
 }
 
@@ -124,7 +121,7 @@ type UserConnectEmailValidator struct {
 		Email    string `form:"email" json:"email" binding:"required,email"`
 		Password string `form:"password" json:"password" binding:"required,min=8,max=255"`
 	} `json:"user_connect_with_email"`
-	uModel source.UserModel `json:"-"`
+	uModel models.UserModel `json:"-"`
 }
 
 // Если необходимо добавить значения по-умолчанию
@@ -132,7 +129,7 @@ func NewUserConnectEmailValidator() *UserConnectEmailValidator {
 	return &UserConnectEmailValidator{}
 }
 
-func (uev *UserConnectEmailValidator) Model() source.UserModel {
+func (uev *UserConnectEmailValidator) Model() models.UserModel {
 	return uev.uModel
 }
 

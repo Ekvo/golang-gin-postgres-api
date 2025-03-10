@@ -1,11 +1,14 @@
 package users
 
 import (
-	"github.com/gin-gonic/gin"
+	"context"
+	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 	"time"
 
-	"github.com/Ekvo/golang-gin-postgres-api/internal/common"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
+	"github.com/gin-gonic/gin"
+
+	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services"
 )
 
 type UserSerializer struct {
@@ -31,7 +34,7 @@ type UserResponse struct {
 }
 
 func (us *UserSerializer) Response() (UserResponse, error) {
-	uModel, ok := us.C.MustGet(userModel).(source.UserModel)
+	uModel, ok := us.C.MustGet(services.UserModel).(models.UserModel)
 	if !ok {
 		return UserResponse{}, common.ErrCommonUnexpectedType
 	}
@@ -57,8 +60,8 @@ func (us *UserSerializer) Response() (UserResponse, error) {
 }
 
 type ProfileSerializer struct {
-	c *gin.Context
-	source.UserModel
+	C *gin.Context
+	models.UserModel
 }
 
 // Progileresponse - характеристики текущего пользователя
@@ -72,12 +75,12 @@ type ProfileResponse struct {
 	Following bool `json:"following"`
 }
 
-func (ps *ProfileSerializer) Response(db source.UserFollowing) (ProfileResponse, error) {
-	uModel, ok := ps.c.MustGet(userModel).(source.UserModel)
+func (ps *ProfileSerializer) Response(ctx context.Context, db models.UserFollowing) (ProfileResponse, error) {
+	uModel, ok := ps.C.MustGet(services.UserModel).(models.UserModel)
 	if !ok {
 		return ProfileResponse{}, common.ErrCommonUnexpectedType
 	}
-	following, err := db.IsRelationship(ps.c.Request.Context(), uModel, ps.UserModel)
+	following, err := db.IsRelationship(ctx, uModel, ps.UserModel)
 	if err != nil {
 		return ProfileResponse{}, err
 	}

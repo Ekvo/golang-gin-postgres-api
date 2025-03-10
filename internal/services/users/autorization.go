@@ -1,13 +1,17 @@
 package users
 
 import (
+	"context"
 	"errors"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/common"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
+	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/golang-jwt/jwt/v5/request"
-	"net/http"
+
+	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services"
 )
 
 var ErrUsersautorizationToken = errors.New("token from Authorization - incorrect")
@@ -35,28 +39,25 @@ var AuthExtractor = &request.MultiExtractor{
 	AuthHeaderExtractor,
 }
 
-// ключи для записи в 'gin.Context.Keys'
-const (
-	userID     = "user_id"
-	userAccess = "user_access"
-	userModel  = "user_model"
-)
-
 // SetFlagsContext - запись в 'gin.Context.Keys' по ключам 'userID','userAccess' и 'userModel'
-func SetFlagsContext(c *gin.Context, uModel source.UserModel) {
-	c.Set(userID, uModel.ID)
-	c.Set(userAccess, uModel.Access)
-	c.Set(userModel, uModel)
+func SetFlagsContext(c *gin.Context, uModel models.UserModel) {
+	c.Set(services.UserID, uModel.ID)
+	c.Set(services.UserAccess, uModel.Access)
+	c.Set(services.UserModel, uModel)
 }
 
 // DataForContextUserModel -  если 'id_user != 0' получение данных пользователя
 // и записи в 'gin.Context.Keys'
 // с возможностью выбирать базу данных
-func DataForContextUserModel(c *gin.Context, db source.UserApprove, id_user uint) error {
-	var uModel source.UserModel
+func DataForContextUserModel(c *gin.Context, db models.UserApprove, id_user uint) error {
+	ctx := c.Request.Context()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var uModel models.UserModel
 	if id_user != 0 {
 		var err error = nil
-		uModel, err = db.FindOneUserByField(c.Request.Context(), source.UserModel{ID: id_user}, source.FlagID)
+		uModel, err = db.FindOneUserByField(c.Request.Context(), models.UserModel{ID: id_user}, models.FlagID)
 		if err != nil {
 			return err
 		}
@@ -67,24 +68,29 @@ func DataForContextUserModel(c *gin.Context, db source.UserApprove, id_user uint
 
 // Autorization - авторизация, получение данныx для последующих gin.HandlerFunc в gin.Group
 // с аозможностью выбирать базу данных
-func Autorization(db source.UserApprove) gin.HandlerFunc {
+func Autorization(db models.UserApprove) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if c.Request.Context().Err() != nil {
+			return
+		}
 		_ = DataForContextUserModel(c, nil, 0)
 		token, errToken := request.ParseFromRequest(c.Request, AuthExtractor, func(token *jwt.Token) (interface{}, error) {
 			key := []byte(common.SecretKey)
 			return key, nil
 		})
-		if errToken != nil {
+		if errToken != nil || !token.Valid {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, common.NewError("autorization", errToken))
 			return
 		}
-		user_id, err := common.Indeficator(token, "id")
+		user_id, err := common.IDFromToken(token)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, common.NewError("autorization", err))
 			return
 		}
 		if err := DataForContextUserModel(c, db, uint(user_id)); err != nil {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, common.NewError("data_base", err))
+			if err != context.DeadlineExceeded {
+				c.AbortWithStatusJSON(http.StatusNotFound, common.NewError("data_base", err))
+			}
 			return
 		}
 	}

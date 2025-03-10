@@ -2,10 +2,14 @@
 package common
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,9 +18,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const SecretKey = "qwert12345"
+const (
+	SecretKey     = "qwert12345"
+	TrickPassword = "not a password"
+)
 
-var incorrectToken = errors.New("token not valid")
+var ErrCommonTokenIncorrect = errors.New("token not valid")
 
 // GenToken - генерирует токен для использования в Request header
 func GenToken(id uint) (string, error) {
@@ -28,21 +35,57 @@ func GenToken(id uint) (string, error) {
 	return jwtToken.SignedString([]byte(SecretKey))
 }
 
+// IDFromToken - проверяет время действия токена и возвращает 'ID' пользователя
+func IDFromToken(token *jwt.Token) (uint, error) {
+	exploretion, err := Indeficator[float64](token, "exploretion")
+	if err != nil {
+		return 0, err
+	}
+	if int64(exploretion) < time.Now().Unix() {
+		return 0, errors.New("token time expired")
+	}
+	user_id, err := Indeficator[float64](token, "id")
+	if err != nil {
+		return 0, err
+	}
+	return uint(user_id), nil
+}
+
 // Indeficator - для получения 'id' из jwt.MapClaims (для удобства)
-func Indeficator(token *jwt.Token, key string) (int, error) {
-	var value int
+func Indeficator[T any](token *jwt.Token, key string) (T, error) {
+	var value T
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok || !token.Valid {
-		return value, incorrectToken
+		return value, ErrCommonTokenIncorrect
 	}
-	value = int(claims[key].(float64))
-
+	value, ok = claims[key].(T)
+	if !ok {
+		return value, ErrCommonTokenIncorrect
+	}
 	return value, nil
+}
+
+// ContextMiddleware - стартовая функция для создания context.WithTimeout
+// и передачи ctx через 'c.Request'
+func ContextMiddleware(timeout time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
+
+		defer func() {
+			if ctx.Err() == context.DeadlineExceeded {
+				c.AbortWithStatus(http.StatusRequestTimeout)
+			}
+			cancel()
+		}()
+
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	}
 }
 
 // ошибка для защиты от некоректного использования:
 // getFieldName(structNamespace string) (string, error)
-var incorrectStructNamespace = errors.New("incorrect struct namespace")
+var ErrCommonFiledValidatorIncorrect = errors.New("incorrect struct namespace")
 
 // FiledValidator - для создания кастомных функций обработки ошибок
 // объекта validator.FieldError
@@ -57,14 +100,14 @@ func (fv FiledValidator) FieldName() (string, error) {
 	if n < 3 ||
 		structNamespace[0] == '.' ||
 		structNamespace[n-1] == '.' {
-		return "", incorrectStructNamespace
+		return "", ErrCommonFiledValidatorIncorrect
 	}
 	for i := n - 1; i > -1; i-- {
 		if structNamespace[i] == '.' {
 			return structNamespace[i+1 : n], nil
 		}
 	}
-	return "", incorrectStructNamespace
+	return "", ErrCommonFiledValidatorIncorrect
 }
 
 // ErrCommonUnexpectedType - маркировка ошибкок приведения типов
@@ -85,8 +128,11 @@ func NewError(key string, err error) CommonError {
 // обработка ошибок полученных во время выполнения 'context.Bind' из 'gin' framework
 func NewDataErrorValidator(err error) CommonError {
 	storeErros := make(map[string]any)
-	dataErr := err.(validator.ValidationErrors)
-
+	dataErr, ok := err.(validator.ValidationErrors)
+	if !ok {
+		storeErros["validator"] = ErrCommonUnexpectedType.Error()
+		return CommonError{storeErros}
+	}
 	for _, fe := range dataErr {
 		info := fe.Param()
 		if len(info) == 0 {
@@ -117,4 +163,48 @@ func IsValidParam(c *gin.Context, key string) (string, bool) {
 		return "", false
 	}
 	return val, true
+}
+
+// WhenEmptyStringThenNULL - для записи в базу данных значения - 'NULL' по заданным условиям
+func WhenEmptyStringThenNULL(s *string) sql.NullString {
+	if s == nil {
+		return sql.NullString{"", false}
+	}
+	return sql.NullString{*s, len(*s) != 0}
+}
+
+// ArrayToLineForQuery - формализует массив в строку для запросов типа 'IN (line)'
+// возвращает строку для запроса и количесво записанных элеменов
+// []string{"abc","def"} -> "'abc','def'"
+func ArrayToLineForQuery(data []string) (string, int) {
+	var buff bytes.Buffer
+	n := len(data)
+	// защита от пустого запроса в sql.DB
+	// ... WHERE some IN('')
+	if n == 0 {
+		buff.Write([]byte{'\'', '\''})
+		return buff.String(), n
+	}
+	for i := 0; i < n; i++ {
+		buff.WriteByte('\'')
+		buff.WriteString(data[i])
+		buff.Write([]byte{'\'', ','})
+	}
+	if lenArr := buff.Len(); lenArr > 0 {
+		buff.Truncate(lenArr - 1)
+	}
+	return buff.String(), n
+}
+
+// TimeRange - диапозон времени
+type TimeRange struct {
+	StartDate time.Time
+	EndDate   time.Time
+}
+
+// LimitOffset - характеристики для SQL query
+// команды LIMIT number OFFSET number;
+type LimitOffset struct {
+	Limit  uint
+	Offset uint
 }
