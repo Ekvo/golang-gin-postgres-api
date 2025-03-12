@@ -2,14 +2,17 @@ package users
 
 import (
 	"errors"
-	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
-	"github.com/gin-gonic/gin"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
+	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
 
 var ErrUsersValidatorPassword = errors.New("invalid password")
+
+type UCV = UserCreateValidator
 
 type UserCreateValidator struct {
 	User struct {
@@ -26,7 +29,6 @@ type UserCreateValidator struct {
 	uModel models.UserModel `json:"-"`
 }
 
-// Если необходимо добавить значения по-умолчанию
 func NewUserCreateValidator() *UserCreateValidator {
 	return &UserCreateValidator{}
 }
@@ -64,6 +66,8 @@ func (ucv *UserCreateValidator) Bind(c *gin.Context) error {
 	return nil
 }
 
+type UCLV = UserConnectLoginValidator
+
 type UserConnectLoginValidator struct {
 	UserLogin struct {
 		Login    string `form:"login" json:"login" binding:"required,alphanum,min=2,max=128"`
@@ -72,7 +76,6 @@ type UserConnectLoginValidator struct {
 	uModel models.UserModel `json:"-"`
 }
 
-// Если необходимо добавить значения по-умолчанию
 func NewUserConnectLoginValidator() *UserConnectLoginValidator {
 	return &UserConnectLoginValidator{}
 }
@@ -87,8 +90,12 @@ func (ulv *UserConnectLoginValidator) Bind(c *gin.Context) error {
 	}
 	ulv.uModel.Login = ulv.UserLogin.Login
 	ulv.uModel.Password = ulv.UserLogin.Password
+	timeConnect := time.Now()
+	ulv.uModel.LastConnection = &timeConnect
 	return nil
 }
+
+type UCPV = UserConnectPhoneValidator
 
 type UserConnectPhoneValidator struct {
 	UserPhone struct {
@@ -98,7 +105,6 @@ type UserConnectPhoneValidator struct {
 	uModel models.UserModel `json:"-"`
 }
 
-// Если необходимо добавить значения по-умолчанию
 func NewUserConnectPhoneValidator() *UserConnectPhoneValidator {
 	return &UserConnectPhoneValidator{}
 }
@@ -113,8 +119,12 @@ func (upv *UserConnectPhoneValidator) Bind(c *gin.Context) error {
 	}
 	upv.uModel.Phone = &upv.UserPhone.Phone
 	upv.uModel.Password = upv.UserPhone.Password
+	timeConnect := time.Now()
+	upv.uModel.LastConnection = &timeConnect
 	return nil
 }
+
+type UCEV = UserConnectEmailValidator
 
 type UserConnectEmailValidator struct {
 	UserEmail struct {
@@ -124,7 +134,6 @@ type UserConnectEmailValidator struct {
 	uModel models.UserModel `json:"-"`
 }
 
-// Если необходимо добавить значения по-умолчанию
 func NewUserConnectEmailValidator() *UserConnectEmailValidator {
 	return &UserConnectEmailValidator{}
 }
@@ -139,5 +148,51 @@ func (uev *UserConnectEmailValidator) Bind(c *gin.Context) error {
 	}
 	uev.uModel.Email = uev.UserEmail.Email
 	uev.uModel.Password = uev.UserEmail.Password
+	timeConnect := time.Now()
+	uev.uModel.LastConnection = &timeConnect
+	return nil
+}
+
+type UPV = UserProperyValidator
+
+type UserProperyValidator struct {
+	Property struct {
+		FirstName string    `form:"first_name" json:"first_name" binding:"omitempty,alpha,min=1,max=128"`
+		LastName  string    `form:"last_name" json:"last_name" binding:"omitempty,alpha,min=1,max=128"`
+		StartDate time.Time `from:"start_date" json:"start_date"`
+		EndDate   time.Time `form:"end_date" json:"end_date"`
+		Limit     uint      `form:"limit" json:"limit" binding:"omitempty,numeric"`
+		Offset    uint      `form:"offset" json:"offset" binding:"omitempty,numeric"`
+	} `json:"user_property"`
+	uProperty models.UserProperty `json:"-"`
+}
+
+func NewUserProperyValidator() *UserProperyValidator {
+	return &UserProperyValidator{}
+}
+
+func (upv *UserProperyValidator) Model() models.UserProperty {
+	return upv.uProperty
+}
+
+func (upv *UserProperyValidator) Bind(c *gin.Context) error {
+	if err := common.Bind(c, upv); err != nil {
+		return err
+	}
+	upv.uProperty.FirstName = upv.Property.FirstName
+	upv.uProperty.LastName = upv.Property.LastName
+	if upv.Property.Limit == 0 {
+		upv.Property.Limit = 20
+	}
+	upv.uProperty.Limit = upv.Property.Limit
+	upv.uProperty.Offset = upv.Property.Offset
+	if start := upv.Property.StartDate; !start.IsZero() {
+		upv.uProperty.StartDate = start
+	}
+	if end := upv.Property.EndDate; !end.IsZero() {
+		upv.uProperty.EndDate = end
+	} else {
+		upv.uProperty.EndDate = time.Now()
+	}
 	return nil
 }

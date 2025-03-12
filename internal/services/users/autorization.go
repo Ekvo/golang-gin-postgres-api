@@ -3,7 +3,6 @@ package users
 import (
 	"context"
 	"errors"
-	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5/request"
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services"
+	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
 
 var ErrUsersautorizationToken = errors.New("token from Authorization - incorrect")
@@ -41,23 +40,23 @@ var AuthExtractor = &request.MultiExtractor{
 
 // SetFlagsContext - запись в 'gin.Context.Keys' по ключам 'userID','userAccess' и 'userModel'
 func SetFlagsContext(c *gin.Context, uModel models.UserModel) {
-	c.Set(services.UserID, uModel.ID)
-	c.Set(services.UserAccess, uModel.Access)
-	c.Set(services.UserModel, uModel)
+	c.Set(models.KeyUserID, uModel.ID)
+	c.Set(models.KeyUserModel, uModel)
+	c.Set(models.KeyUserAccess, uModel.Access)
 }
 
 // DataForContextUserModel -  если 'id_user != 0' получение данных пользователя
 // и записи в 'gin.Context.Keys'
 // с возможностью выбирать базу данных
 func DataForContextUserModel(c *gin.Context, db models.UserApprove, id_user uint) error {
-	ctx := c.Request.Context()
+	ctx := context.WithValue(c.Request.Context(), models.KeyFlagFiled, models.FlagID)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	var uModel models.UserModel
 	if id_user != 0 {
 		var err error = nil
-		uModel, err = db.FindOneUserByField(c.Request.Context(), models.UserModel{ID: id_user}, models.FlagID)
+		uModel, err = db.FindOneUserByField(ctx, models.UserModel{ID: id_user})
 		if err != nil {
 			return err
 		}

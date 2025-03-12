@@ -1,14 +1,13 @@
 package articles
 
 import (
-	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gosimple/slug"
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services"
+	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
 
 type ArticleCreateValidator struct {
@@ -35,7 +34,7 @@ func (acv *ArticleCreateValidator) Bind(c *gin.Context) error {
 	}
 	acv.aModel.Slug = slug.Make(acv.Article.Title)
 	acv.aModel.Title = acv.Article.Title
-	acv.aModel.AutorID = c.MustGet(services.UserID).(uint)
+	acv.aModel.AutorID = c.MustGet(models.KeyUserID).(uint)
 	acv.aModel.Description = acv.Article.Description
 	acv.aModel.Body = acv.Article.Body
 	acv.aModel.Tags = acv.Article.Tags
@@ -64,7 +63,7 @@ func (tcv *TagCreateValidator) Bind(c *gin.Context) error {
 		return err
 	}
 	tcv.tModel.Name = tcv.Tag.Name
-	tcv.tModel.AutorID = c.MustGet(services.UserID).(uint)
+	tcv.tModel.AutorID = c.MustGet(models.KeyUserID).(uint)
 	tcv.tModel.CreatedAt = time.Now()
 
 	return nil
@@ -89,7 +88,7 @@ func (ccv *CommentCreateValidator) Bind(c *gin.Context) error {
 	if err := common.Bind(c, ccv); err != nil {
 		return err
 	}
-	ccv.cModel.AutorID = c.MustGet(services.UserID).(uint)
+	ccv.cModel.AutorID = c.MustGet(models.KeyUserID).(uint)
 	ccv.cModel.Body = ccv.Comment.Body
 	ccv.cModel.CreatedAt = time.Now()
 
@@ -98,11 +97,13 @@ func (ccv *CommentCreateValidator) Bind(c *gin.Context) error {
 
 type ArticlePropertyValidator struct {
 	Property struct {
-		Tags      []string `from:"tags" json:"tags"`
-		AutorName string   `form:"autor_name" json:"autor_name" binding:"omitempty,alphanum,min=1,max=128"'`
-		Favorited bool     `form:"favorited" json:"favorited"`
-		Limit     uint     `form:"limit" json:"limit" binding:"omitempty,numeric"`
-		Offset    uint     `form:"offset" json:"offset" binding:"omitempty,numeric"`
+		Tags      []string  `from:"tags" json:"tags"`
+		AutorName string    `form:"autor_name" json:"autor_name" binding:"omitempty,alphanum,min=1,max=128"'`
+		Favorited bool      `form:"favorited" json:"favorited"`
+		StartDate time.Time `from:"start_date" json:"start_date"`
+		EndDate   time.Time `form:"end_date" json:"end_date"`
+		Limit     uint      `form:"limit" json:"limit" binding:"omitempty,numeric"`
+		Offset    uint      `form:"offset" json:"offset" binding:"omitempty,numeric"`
 	} `json:"artcicle_property"`
 	aProperty models.ArticleProperty `json:"-"`
 }
@@ -127,6 +128,15 @@ func (apv *ArticlePropertyValidator) Bind(c *gin.Context) error {
 	}
 	apv.aProperty.Limit = apv.Property.Limit
 	apv.aProperty.Offset = apv.Property.Offset
+
+	if start := apv.Property.StartDate; !start.IsZero() {
+		apv.aProperty.StartDate = start
+	}
+	if end := apv.Property.EndDate; !end.IsZero() {
+		apv.aProperty.EndDate = end
+	} else {
+		apv.aProperty.EndDate = time.Now()
+	}
 	return nil
 }
 
@@ -161,8 +171,6 @@ func (tpv *TagPropertyValidator) Bind(c *gin.Context) error {
 	tpv.tProperty.Offset = tpv.Property.Offset
 	if start := tpv.Property.StartDate; !start.IsZero() {
 		tpv.tProperty.StartDate = start
-	} else {
-		tpv.tProperty.StartDate = time.Time{}
 	}
 	if end := tpv.Property.EndDate; !end.IsZero() {
 		tpv.tProperty.EndDate = end
@@ -205,8 +213,6 @@ func (cpv *CommentPropertyValidator) Bind(c *gin.Context) error {
 	cpv.cProperty.Offset = cpv.Property.Offset
 	if start := cpv.Property.StartDate; !start.IsZero() {
 		cpv.cProperty.StartDate = start
-	} else {
-		cpv.cProperty.StartDate = time.Time{}
 	}
 	if end := cpv.Property.EndDate; !end.IsZero() {
 		cpv.cProperty.EndDate = end

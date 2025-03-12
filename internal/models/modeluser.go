@@ -3,10 +3,13 @@ package models
 import (
 	"context"
 	"errors"
-	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 	"strconv"
 	"time"
+
+	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
+
+type UM = UserModel
 
 type UserModel struct {
 	ID        uint
@@ -31,35 +34,46 @@ type UserModel struct {
 	Bio   *string //biography
 }
 
+// UserProperty - свойсва для поиска списка пользователей
+// см.'UserApprove' 'FindUserList(ctx context.Context, data any) ([]UserModel, error)'
+type UserProperty struct {
+	FirstName string
+	LastName  string
+
+	common.TimeRange
+
+	common.LimitOffset
+}
+
 // UserConnect - описывает регистрацию и подключение пользователя
 type UserConnect interface {
 	// SaveOneUser - запись данных пользователя и получение ногового, уникального ID
-	SaveOneUser(ctx context.Context, user UserModel) (uint, error)
+	SaveOneUser(ctx context.Context, data any) (uint, error)
 
-	// LoginUserWithUpdateTime - поиск по определенному полю,
-	// определяемому с помощью 'flag' см. modeluser.go в текущем пакете 'source'
+	// LoginUserWithUpdateTime - поискользователя,
 	// так же должна обновлять поле LastConnection *time.Time
-	LoginUserWithUpdateTime(ctx context.Context, user UserModel, flag int) (UserModel, error)
+	LoginUserWithUpdateTime(ctx context.Context, data any) (UserModel, error)
 }
 
 // UserApprove - получение, обновление данных пользователя
 type UserApprove interface {
-	// FindOneUserByField - поиск пользователя по полую, определяемому с помощью 'flag' - см топ. данного фафла
-	FindOneUserByField(ctx context.Context, user UserModel, falg int) (UserModel, error)
+	FindOneUserByField(ctx context.Context, data any) (UserModel, error)
 
-	NewDataUser(ctx context.Context, user UserModel) error
+	FindUserList(ctx context.Context, data any) ([]UserModel, error)
+
+	NewDataUser(ctx context.Context, data any) error
 }
 
 // UserFollowing - обрабатывает отношение пользователей
 type UserFollowing interface {
 	// NewRelationship(new following) - создает статус подписки для выбранных пользователей
-	NewRelationship(ctx context.Context, userFollower, userSpeaker UserModel) error
+	NewRelationship(ctx context.Context, data any) error
 
 	// IsRelationship(is following) - возращает наличие подписки 'userFolower' на 'userSpeaker'
-	IsRelationship(ctx context.Context, userFollower, userSpeaker UserModel) (bool, error)
+	IsRelationship(ctx context.Context, data any) (bool, error)
 
 	// EndRelationship(delete following) - удаляет статус подписки для выбранных пользователей
-	EndRelationship(ctx context.Context, userFollower, userSpeaker UserModel) error
+	EndRelationship(ctx context.Context, data any) error
 }
 
 // UserApproveAndFollowing - групирует методы связанные с обработкой зарегистрированных пользователей
@@ -99,6 +113,21 @@ func (u *UserModel) CheckPassword(password string) bool {
 
 // ErrSourceFlag - некорректный флага
 var ErrSourceFlag = errors.New("unexpected flag")
+
+// ключи для записи в 'gin.Context.Keys'
+const (
+	// храним в формате 'uint'
+	KeyUserID = "user_id"
+
+	// храним в формате 'string'
+	KeyUserAccess = "user_access"
+
+	// храним в формате 'UserModel'
+	KeyUserModel = "user_model"
+
+	// храним в формате 'int'
+	KeyFlagFiled = "flag_filed"
+)
 
 // маркеры для поиска по полю 'UserModel'
 const (

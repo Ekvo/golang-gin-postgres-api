@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services"
-	"github.com/lib/pq"
 	"log"
 	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
@@ -20,19 +20,19 @@ var ErrSourceTagsCount = errors.New("count tags not equal")
 // ErrSourceBigSlug - контралирует длину 'articleModel.Slug','articleModel.Title' при создании, обновлении статьи
 var ErrSourceBigSlug = errors.New("slug or title is oversized")
 
-func (s SQLSource) SaveOneArticle(ctx context.Context, data any) (uint, error) {
+// ErrSourceNoUpdate - для маркировки отрицательного обновления, создания записей
+var ErrSourceNoUpdate = errors.New("no update or delete")
+
+func (s *SQLSource) SaveOneArticle(ctx context.Context, data any) (uint, error) {
 	articleModel := data.(models.ArticleModel)
 	if len(articleModel.Slug) > models.MaxLenSlug {
 		return 0, ErrSourceBigSlug
+	}
+	insertArticle := func(ctx context.Context) error {
+		lineTagsName, countTags := common.ArrayToLineForQuery(articleModel.Tags)
+		newRowsInArticleTags := 0
 
-	}
-	lineTagsName, countTags := common.ArrayToLineForQuery(articleModel.Tags)
-	newRowsInArticleTags := 0
-	tx, err := s.sourceDB.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	err = s.sourceDB.QueryRowContext(ctx, fmt.Sprintf(`
+		err := s.sourceDBTX.Tx.QueryRowContext(ctx, fmt.Sprintf(`
 WITH to_articles AS(
     INSERT INTO articles (slug,
                           title,
@@ -55,39 +55,38 @@ WITH to_articles AS(
 )
 SELECT id,(SELECT COUNT(*) FROM to_articles_tags)
 FROM to_articles;`, lineTagsName),
-		articleModel.Slug,        //1
-		articleModel.Title,       //2
-		articleModel.AutorID,     //3
-		articleModel.Description, //4
-		articleModel.Body,        //5
-	).Scan(&articleModel.ID, &newRowsInArticleTags)
-
-	if newRowsInArticleTags != countTags {
-		return 0, SQLRollback(tx, ErrSourceTagsCount)
+			articleModel.Slug,        //1
+			articleModel.Title,       //2
+			articleModel.AutorID,     //3
+			articleModel.Description, //4
+			articleModel.Body,        //5
+		).Scan(&articleModel.ID, &newRowsInArticleTags)
+		if err != nil {
+			return err
+		}
+		// проверяем на отсутсвие инородных тегов
+		if newRowsInArticleTags != countTags {
+			return ErrSourceTagsCount
+		}
+		return nil
 	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	return articleModel.ID, nil
+	return articleModel.ID, s.sourceDBTX.Transaction(ctx, insertArticle)
 }
 
-func (s SQLSource) NewDataArticle(ctx context.Context, data any) error {
-	articleModel := data.(models.ArticleModel)
-	lineTagsName, countTags := common.ArrayToLineForQuery(articleModel.Tags)
-	newRowsInArticleTags := 0
+func (s *SQLSource) NewDataArticle(ctx context.Context, data any) error {
+	updateArticle := func(ctx context.Context) error {
+		articleModel := data.(models.ArticleModel)
+		lineTagsName, countTags := common.ArrayToLineForQuery(articleModel.Tags)
+		newRowsInArticleTags := 0
 
-	tx, err := s.sourceDB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	// удаляем старую связь тегов и статьи	в последующем создадим новую
-	_, err = s.sourceDB.ExecContext(ctx, `
+		// удаляем старую связь тегов и статьи	в последующем создадим новую
+		_, err := s.sourceDBTX.Tx.ExecContext(ctx, `
 	DELETE FROM articles_tags
 	WHERE id_article = $1;`, articleModel.ID)
-	if err != nil {
-		return SQLRollback(tx, err)
-	}
-	err = s.sourceDB.QueryRowContext(ctx, fmt.Sprintf(`
+		if err != nil {
+			return err
+		}
+		err = s.sourceDBTX.Tx.QueryRowContext(ctx, fmt.Sprintf(`
 WITH to_articles AS(
     UPDATE articles
         SET slug = $2,
@@ -108,67 +107,66 @@ SELECT id FROM tags WHERE tag_name IN (%s)
         RETURNING *
 )
 SELECT COUNT(*) FROM to_articles_tags;`, lineTagsName),
-		articleModel.ID,          //1
-		articleModel.Slug,        //2
-		articleModel.Title,       //3
-		articleModel.UpdatedAt,   //4
-		articleModel.Description, //5
-		articleModel.Body,        //6
-	).Scan(&newRowsInArticleTags)
-
-	if err != nil {
-		return SQLRollback(tx, err)
+			articleModel.ID,          //1
+			articleModel.Slug,        //2
+			articleModel.Title,       //3
+			articleModel.UpdatedAt,   //4
+			articleModel.Description, //5
+			articleModel.Body,        //6
+		).Scan(&newRowsInArticleTags)
+		if err != nil {
+			return err
+		}
+		if newRowsInArticleTags != countTags {
+			return ErrSourceTagsCount
+		}
+		return nil
 	}
-	if newRowsInArticleTags != countTags {
-		return SQLRollback(tx, ErrSourceTagsCount)
-	}
-	return tx.Commit()
+	return s.sourceDBTX.Transaction(ctx, updateArticle)
 }
 
-func (s SQLSource) EndArticleLife(ctx context.Context, data any) error {
-	articleModel := data.(models.ArticleModel)
-
-	tx, err := s.sourceDB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	_, err = s.sourceDB.ExecContext(ctx, `
+func (s *SQLSource) EndArticleLife(ctx context.Context, data any) error {
+	deleteArticle := func(ctx context.Context) error {
+		articleModel := data.(models.ArticleModel)
+		_, err := s.sourceDBTX.Tx.ExecContext(ctx, `
 DELETE FROM comments_body
        WHERE id_comment IN (SELECT id FROM comments WHERE id_article = $1);`, articleModel.ID)
-	if err != nil {
-		return SQLRollback(tx, err)
-	}
-	_, err = s.sourceDB.ExecContext(ctx, `
+		if err != nil {
+			return err
+		}
+		_, err = s.sourceDBTX.Tx.ExecContext(ctx, `
 DELETE FROM comments WHERE id_article = $1;`, articleModel.ID)
-	if err != nil {
-		return SQLRollback(tx, err)
-	}
-	_, err = s.sourceDB.ExecContext(ctx, `
+		if err != nil {
+			return err
+		}
+		_, err = s.sourceDBTX.Tx.ExecContext(ctx, `
 DELETE FROM articles_tags WHERE id_article = $1;`, articleModel.ID)
-	if err != nil {
-		return SQLRollback(tx, err)
-	}
-	_, err = s.sourceDB.ExecContext(ctx, `
+		if err != nil {
+			return err
+		}
+		_, err = s.sourceDBTX.Tx.ExecContext(ctx, `
 DELETE FROM articles_favorite WHERE id_article = $1;`, articleModel.ID)
-	if err != nil {
-		return SQLRollback(tx, err)
-	}
-	_, err = s.sourceDB.ExecContext(ctx, `
+		if err != nil {
+			return err
+		}
+		_, err = s.sourceDBTX.Tx.ExecContext(ctx, `
 DELETE FROM articles_body WHERE id_article = $1;`, articleModel.ID)
-	if err != nil {
-		return SQLRollback(tx, err)
-	}
-	_, err = s.sourceDB.ExecContext(ctx, `
+		if err != nil {
+			return err
+		}
+		_, err = s.sourceDBTX.Tx.ExecContext(ctx, `
 DELETE FROM articles WHERE id = $1;`, articleModel.ID)
-	if err != nil {
-		return SQLRollback(tx, err)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
-	return tx.Commit()
+	return s.sourceDBTX.Transaction(ctx, deleteArticle)
 }
 
-func (s SQLSource) FindOneArticle(ctx context.Context, data any) (models.ArticleModel, error) {
+func (s *SQLSource) FindOneArticle(ctx context.Context, data any) (models.ArticleModel, error) {
 	slug := data.(string)
-	row := s.sourceDB.QueryRowContext(ctx, `
+	row := s.sourceDBTX.DB.QueryRowContext(ctx, `
 SELECT a.id,
        a.slug,
        a.title,
@@ -223,9 +221,9 @@ func scanArcticleModel[T SQLRowsRowScan](rows T) (models.ArticleModel, error) {
 	return article, nil
 }
 
-func (s SQLSource) FindArticleList(ctx context.Context, data any) ([]models.ArticleModel, error) {
+func (s *SQLSource) FindArticleList(ctx context.Context, data any) ([]models.ArticleModel, error) {
 	arcticleProperty := data.(models.ArticleProperty)
-	userID := ctx.Value(services.UserID).(uint)
+	userID := ctx.Value(models.KeyUserID).(uint)
 	tagsLine, _ := common.ArrayToLineForQuery(arcticleProperty.Tags)
 	queryBody := fmt.Sprintf(`
 SELECT a.id,
@@ -245,7 +243,8 @@ SELECT a.id,
 FROM articles a
     JOIN articles_body ab ON a.id = ab.id_article
     JOIN users u ON a.id_autor = u.id
-WHERE  (
+WHERE a.created_at BETWEEN '%s' AND '%s'
+    (
     CASE --1  
         WHEN %d > 0 --autor name not empty
             THEN a.id_autor = (SELECT id
@@ -272,20 +271,23 @@ WHERE  (
                               WHERE id_user = %d) -- current user
             ELSE a.id NOT IN (SELECT id_article
                               FROM articles_favorite
-                              WHERE id_user = 1) --find in non-featured articles
+                              WHERE id_user = %d) --find in non-featured articles
         END
     )
 LIMIT %d OFFSET %d;`,
+		arcticleProperty.StartDate.Format(time.DateTime),
+		arcticleProperty.EndDate.Format(time.DateTime),
 		len(arcticleProperty.AutorName), //first case
 		arcticleProperty.AutorName,      //first case
 		len(tagsLine),                   //second case
 		tagsLine,                        //second case
 		arcticleProperty.Favorited,      //third case
 		userID,                          //third case
+		userID,                          //third case
 		arcticleProperty.Limit,
 		arcticleProperty.Offset,
 	)
-	rows, err := s.sourceDB.QueryContext(ctx, queryBody)
+	rows, err := s.sourceDBTX.DB.QueryContext(ctx, queryBody)
 	if err != nil {
 		return nil, err
 	}
@@ -309,37 +311,45 @@ func scanArcticles(rows *sql.Rows) ([]models.ArticleModel, error) {
 	return arcticles, rows.Err()
 }
 
-func (s SQLSource) ArticleToFavorite(ctx context.Context, data any) error {
-	userID := ctx.Value(services.UserID).(uint)
-	slug := data.(string)
-	_, err := s.sourceDB.ExecContext(ctx, `
+func (s *SQLSource) ArticleToFavorite(ctx context.Context, data any) error {
+	insertArticleFavorite := func(ctx context.Context) error {
+		userID := ctx.Value(models.KeyUserID).(uint)
+		slug := data.(string)
+		_, err := s.sourceDBTX.DB.ExecContext(ctx, `
 INSERT INTO articles_favorite (id_article,id_user)
 VALUES((SELECT id FROM articles WHERE slug = $1 LIMIT 1),$2);`, slug, userID)
-	return err
+		return err
+	}
+	return s.sourceDBTX.Transaction(ctx, insertArticleFavorite)
 }
 
-func (s SQLSource) ArticleUnFovarite(ctx context.Context, data any) error {
-	userID := ctx.Value(services.UserID).(uint)
-	slug := data.(string)
-	_, err := s.sourceDB.ExecContext(ctx, `
+func (s *SQLSource) ArticleUnFovarite(ctx context.Context, data any) error {
+	deleteArticleFavorite := func(ctx context.Context) error {
+		userID := ctx.Value(models.KeyUserID).(uint)
+		slug := data.(string)
+		_, err := s.sourceDBTX.DB.ExecContext(ctx, `
 DELETE FROM articles_favorite
        WHERE id_article = (SELECT id FROM articles WHERE slug = $1 LINIT 1)
          AND id_user = $2;`, slug, userID)
-	return err
+		return err
+	}
+	return s.sourceDBTX.Transaction(ctx, deleteArticleFavorite)
 }
 
-func (s SQLSource) SaveOneTag(ctx context.Context, data any) (uint, error) {
+func (s *SQLSource) SaveOneTag(ctx context.Context, data any) (uint, error) {
 	tagModel := data.(models.TagModel)
-	err := s.sourceDB.QueryRowContext(ctx, `
+	insertTag := func(ctx context.Context) error {
+		return s.sourceDBTX.DB.QueryRowContext(ctx, `
 INSERT INTO tags(tag_name,id_tag_maker,created_at)
 VALUES($1,$2,$3)
 RETURNING id;`, tagModel.Name, tagModel.AutorID, tagModel.CreatedAt).Scan(tagModel.ID)
-	return tagModel.ID, err
+	}
+	return tagModel.ID, s.sourceDBTX.Transaction(ctx, insertTag)
 }
 
-func (s SQLSource) FindOneTag(ctx context.Context, data any) (models.TagModel, error) {
+func (s *SQLSource) FindOneTag(ctx context.Context, data any) (models.TagModel, error) {
 	tagName := data.(string)
-	row := s.sourceDB.QueryRowContext(ctx, `
+	row := s.sourceDBTX.DB.QueryRowContext(ctx, `
 SELECT t.id,
        t.tag_name,
        t.id_tag_maker,
@@ -364,9 +374,9 @@ func scanTagModel[T SQLRowsRowScan](r T) (models.TagModel, error) {
 	return tag, err
 }
 
-func (s SQLSource) TagsList(ctx context.Context, data any) ([]models.TagModel, error) {
+func (s *SQLSource) TagsList(ctx context.Context, data any) ([]models.TagModel, error) {
 	tagProperty := data.(models.TagPropery)
-	rows, err := s.sourceDB.QueryContext(ctx, `
+	rows, err := s.sourceDBTX.DB.QueryContext(ctx, `
 SELECT t.id,
        t.tag_name,
        t.id_tag_maker,
@@ -414,22 +424,113 @@ func scanTags(rows *sql.Rows) ([]models.TagModel, error) {
 	return tags, rows.Err()
 }
 
-func (s SQLSource) SaveOneComment(ctx context.Context, data any) (uint, error) {
-
-	return 0, nil
+func (s *SQLSource) SaveOneComment(ctx context.Context, data any) (uint, error) {
+	commentModel := data.(models.CommentModel)
+	insertComment := func(ctx context.Context) error {
+		return s.sourceDBTX.DB.QueryRowContext(ctx, `
+WITH to_comments AS(
+    INSERT INTO comments(id_article,id_autor,created_at)
+        VALUES((SELECT id
+                FROM articles
+                WHERE slug = $1
+                LIMIT 1),$2,$3)
+        RETURNING id
+), to_comments_body AS (
+    INSERT INTO comments_body (id_comment, body)
+        VALUES ((SELECT id FROM to_comments), $4)
+)
+SELECT id FROM to_comments;`,
+			commentModel.ArticleSlug, //1
+			commentModel.AutorID,     //2
+			commentModel.Body,        //3
+			commentModel.CreatedAt,   //4
+		).Scan(&commentModel.ID)
+	}
+	return commentModel.ID, s.sourceDBTX.Transaction(ctx, insertComment)
 }
 
-func (s SQLSource) NewDataComment(ctx context.Context, data any) error {
-	return nil
+func (s *SQLSource) NewDataComment(ctx context.Context, data any) error {
+	commentModel := data.(models.CommentModel)
+	updateComment := func(ctx context.Context) error {
+		approve := false
+		err := s.sourceDBTX.Tx.QueryRowContext(ctx, `
+WITH to_comments_body AS(
+    UPDATE comments_body
+        SET body = $3
+        WHERE id_comment = $1
+           AND ($2 = (SELECT id_autor --check autor
+                     FROM comments
+                     WHERE id = $1)
+                    OR  (SELECT access --check admin status
+                         FROM users_access
+                         WHERE id_user = $2) > '3' --admin status start with 4 
+               )
+), to_comments AS(
+    UPDATE comments
+        SET updated_at = $4
+        WHERE id = $1
+           AND ($2 = (SELECT id_autor
+                     FROM comments
+                     WHERE id = $1)
+                    OR  (SELECT access
+                         FROM users_access
+                         WHERE id_user = $2) > '3' 
+               )
+           RETURNING *
+)
+SELECT EXISTS(SELECT updated_at FROM to_comments);`,
+			commentModel.ID,        //1
+			commentModel.AutorID,   //2
+			commentModel.Body,      //3
+			commentModel.UpdatedAt, //4
+		).Scan(&approve)
+		if err != nil || !approve {
+			return ErrSourceNoUpdate
+		}
+		return nil
+	}
+	return s.sourceDBTX.Transaction(ctx, updateComment)
 }
 
-func (s SQLSource) EndCommentLife(ctx context.Context, data any) error {
-	return nil
+func (s *SQLSource) EndCommentLife(ctx context.Context, data any) error {
+	commentModel := data.(models.CommentModel)
+	deleteComment := func(ctx context.Context) error {
+		delCommentID := uint(0)
+		err := s.sourceDBTX.Tx.QueryRowContext(ctx, `
+DELETE FROM comments_bodY
+WHERE id_comment = $1
+  AND ($2 = (SELECT id_autor
+             FROM comments
+             WHERE id = $1)
+           OR  (SELECT access
+                FROM users_access
+                WHERE id_user = $2) > '3' 
+               )
+RETURNING id_comment;`, commentModel.ID, commentModel.AutorID).Scan(&delCommentID)
+		if err != nil || delCommentID != commentModel.ID {
+			return ErrSourceNoUpdate
+		}
+		err = s.sourceDBTX.Tx.QueryRowContext(ctx, `
+DELETE FROM comments
+WHERE id = $1
+  AND (id_autor = $2             
+           OR  (SELECT access
+                FROM users_access
+                WHERE id_user = $2) > '3' 
+               )
+RETURNING id;
+`, commentModel.ID, commentModel.AutorID).Scan(&delCommentID)
+		if err != nil || delCommentID != commentModel.ID {
+			return ErrSourceNoUpdate
+		}
+		return nil
+	}
+	return s.sourceDBTX.Transaction(ctx, deleteComment)
 }
 
-func (s SQLSource) FindOneComment(ctx context.Context, data any) (models.CommentModel, error) {
+func (s *SQLSource) FindOneComment(ctx context.Context, data any) (models.CommentModel, error) {
 	commentID := data.(uint)
-	row := s.sourceDB.QueryRowContext(ctx, `
+	row := s.sourceDBTX.DB.QueryRowContext(ctx, `
 SELECT c.id,
        c.id_article,
        a.slug,
@@ -470,9 +571,9 @@ func scanCommentModel[T SQLRowsRowScan](r T) (models.CommentModel, error) {
 	return comment, nil
 }
 
-func (s SQLSource) FindCommentList(ctx context.Context, data any) ([]models.CommentModel, error) {
+func (s *SQLSource) FindCommentList(ctx context.Context, data any) ([]models.CommentModel, error) {
 	commentProperty := data.(models.CommentProperty)
-	rows, err := s.sourceDB.QueryContext(ctx, `
+	rows, err := s.sourceDBTX.DB.QueryContext(ctx, `
 SELECT c.id,
        c.id_article,
        a.slug,

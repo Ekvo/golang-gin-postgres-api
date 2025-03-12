@@ -4,16 +4,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Models - типы структур используемые в 'ValidatorModel' см. ниже
-type Models interface {
-	UserModel |
-		ArticleModel | ArticleProperty |
-		TagModel |
-		CommentModel | CommentProperty
-}
-
 // ValidatorModel - описывает свойсва валидации объектов
-type ValidatorModel[M Models] interface {
+type ValidatorModel[V any, M any] interface {
 	Bind(c *gin.Context) error
 	Model() M
 }

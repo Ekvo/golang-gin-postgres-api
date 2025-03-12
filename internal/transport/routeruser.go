@@ -3,15 +3,14 @@ package transport
 import (
 	"context"
 	"errors"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services"
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users"
+	mod "github.com/Ekvo/golang-gin-postgres-api/internal/models"
+	usr "github.com/Ekvo/golang-gin-postgres-api/internal/services/users"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
 )
 
@@ -19,27 +18,29 @@ import (
 // context.WithTimeout(c.Request.Context(),ctxTimeRequest)
 const CTXUsersTimeRequest = 1000500 * time.Millisecond
 
-func UserBeforeRegister(router *gin.RouterGroup, storeDB source.SQLSource) {
-	router.POST("/signup", UserCreate(storeDB, users.NewUserCreateValidator()))
-	router.POST("/login", UserLogin(storeDB, users.NewUserConnectLoginValidator(), models.FlagLogin))
-	router.POST("/phone", UserLogin(storeDB, users.NewUserConnectPhoneValidator(), models.FlagPhone))
-	router.POST("/email", UserLogin(storeDB, users.NewUserConnectEmailValidator(), models.FlagEmail))
+func UserBeforeRegister(router *gin.RouterGroup, storeDB *source.SQLSource) {
+	router.POST("/signup", UserCreate(storeDB, usr.NewUserCreateValidator()))
+	router.POST("/login", UserLogin[usr.UCLV](storeDB, usr.NewUserConnectLoginValidator(), mod.FlagLogin))
+	router.POST("/phone", UserLogin[usr.UCPV](storeDB, usr.NewUserConnectPhoneValidator(), mod.FlagPhone))
+	router.POST("/email", UserLogin[usr.UCEV](storeDB, usr.NewUserConnectEmailValidator(), mod.FlagEmail))
 }
 
-func UserAfterRegister(router *gin.RouterGroup, storeDB source.SQLSource) {
+func UserAfterRegister(router *gin.RouterGroup, storeDB *source.SQLSource) {
 	router.GET("/", UserRetrieve())
+	router.POST("/", UsersRetrieve(storeDB))
 	router.PUT("/", UserUpdate(storeDB))
+
 }
 
-func SpeakerFolower(router *gin.RouterGroup, storeDB source.SQLSource) {
+func SpeakerFolower(router *gin.RouterGroup, storeDB *source.SQLSource) {
 	router.GET("/:nickname", ProfileRetrieve(storeDB))
 	router.PUT("/:nickname/follow", ProfileFollow(storeDB))
 	router.DELETE("/:nickname/follow", ProfileUnFollow(storeDB))
 }
 
-func UserLogin(db models.UserConnect, modelValidator models.ValidatorModel[models.UserModel], flag int) gin.HandlerFunc {
+func UserLogin[V any](db mod.UserConnect, modelValidator mod.ValidatorModel[V, mod.UM], flag int) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx := c.Request.Context()
+		ctx := context.WithValue(c.Request.Context(), mod.KeyFlagFiled, flag)
 		if ctx.Err() != nil {
 			return
 		}
@@ -48,7 +49,7 @@ func UserLogin(db models.UserConnect, modelValidator models.ValidatorModel[model
 			return
 		}
 		uModelFromValidator := modelValidator.Model()
-		uModel, errDB := db.LoginUserWithUpdateTime(ctx, uModelFromValidator, flag)
+		uModel, errDB := db.LoginUserWithUpdateTime(ctx, uModelFromValidator)
 		if errDB != nil {
 			if errDB != context.DeadlineExceeded {
 				c.JSON(http.StatusNotFound, common.NewError("data_base", errDB))
@@ -56,12 +57,11 @@ func UserLogin(db models.UserConnect, modelValidator models.ValidatorModel[model
 			return
 		}
 		if !uModel.CheckPassword(uModelFromValidator.Password) {
-			c.JSON(http.StatusForbidden, common.NewError("login", users.ErrUsersValidatorPassword))
+			c.JSON(http.StatusForbidden, common.NewError("login", usr.ErrUsersValidatorPassword))
 			return
 		}
-
-		users.SetFlagsContext(c, uModel)
-		serialize := users.UserSerializer{c}
+		usr.SetFlagsContext(c, uModel)
+		serialize := usr.UserSerializer{c}
 		userResponse, err := serialize.Response()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -71,7 +71,7 @@ func UserLogin(db models.UserConnect, modelValidator models.ValidatorModel[model
 	}
 }
 
-func UserCreate(db models.UserConnect, modelValidator models.ValidatorModel[models.UserModel]) gin.HandlerFunc {
+func UserCreate(db mod.UserConnect, modelValidator mod.ValidatorModel[usr.UCV, mod.UserModel]) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		if ctx.Err() != nil {
@@ -90,9 +90,9 @@ func UserCreate(db models.UserConnect, modelValidator models.ValidatorModel[mode
 			}
 			return
 		}
-		users.SetFlagsContext(c, uModelFromValidator)
+		usr.SetFlagsContext(c, uModelFromValidator)
 
-		serialize := users.UserSerializer{c}
+		serialize := usr.UserSerializer{c}
 		userResponse, err := serialize.Response()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -104,7 +104,7 @@ func UserCreate(db models.UserConnect, modelValidator models.ValidatorModel[mode
 
 func UserRetrieve() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		serialize := users.UserSerializer{c}
+		serialize := usr.UserSerializer{c}
 		userResponse, err := serialize.Response()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -114,24 +114,46 @@ func UserRetrieve() gin.HandlerFunc {
 	}
 }
 
-func UserUpdate(db models.UserApprove) gin.HandlerFunc {
+func UsersRetrieve(db mod.UserApprove) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		if ctx.Err() != nil {
 			return
 		}
-		userID, ok := c.MustGet(services.UserID).(uint)
-		if !ok {
-			c.AbortWithError(http.StatusInternalServerError, common.ErrCommonUnexpectedType)
+		modelValidator := usr.NewUserProperyValidator()
+		if err := modelValidator.Bind(c); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
 		}
-		modelValidator := users.NewUserCreateValidator()
+		usersList, err := db.FindUserList(ctx, modelValidator.Model())
+		if err != nil {
+			if err != context.DeadlineExceeded {
+				c.JSON(http.StatusInternalServerError, common.NewError("data_base", err))
+			}
+			return
+		}
+		if len(usersList) == 0 {
+			c.JSON(http.StatusNoContent, gin.H{"empty": ""})
+			return
+		}
+		serialize := usr.UsersSerializer{c, usersList}
+		c.JSON(http.StatusOK, gin.H{"users": serialize.Response()})
+	}
+}
+
+func UserUpdate(db mod.UserApprove) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		if ctx.Err() != nil {
+			return
+		}
+		modelValidator := usr.NewUserCreateValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
 		}
 		uModel := modelValidator.Model()
-		uModel.ID = userID
+		uModel.ID = c.MustGet(mod.KeyUserID).(uint)
 		uModel.UpdatedAT = &uModel.CreatedAt
 		if err := db.NewDataUser(ctx, uModel); err != nil {
 			if err != context.DeadlineExceeded {
@@ -139,13 +161,13 @@ func UserUpdate(db models.UserApprove) gin.HandlerFunc {
 			}
 			return
 		}
-		if err := users.DataForContextUserModel(c, db, userID); err != nil {
+		if err := usr.DataForContextUserModel(c, db, uModel.ID); err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusInternalServerError, common.NewError("data_base", err))
 			}
 			return
 		}
-		serialize := users.UserSerializer{c}
+		serialize := usr.UserSerializer{c}
 		userResponse, err := serialize.Response()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -164,9 +186,9 @@ var ErrUsersNotFound = errors.New("not faound")
 // ProfileRetrieve - проверят имеет ли подписку текуший пользователь из c.Keys[userModel]
 //
 //	на 'userLogin' полученного в базе при помощи 'login' из 'c.Param'
-func ProfileRetrieve(db models.UserApproveFollowing) gin.HandlerFunc {
+func ProfileRetrieve(db mod.UserApproveFollowing) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx := c.Request.Context()
+		ctx := context.WithValue(c.Request.Context(), mod.KeyFlagFiled, mod.FlagLogin)
 		if ctx.Err() != nil {
 			return
 		}
@@ -175,14 +197,14 @@ func ProfileRetrieve(db models.UserApproveFollowing) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, common.NewError("profile", ErrUsersInvalidProfile))
 			return
 		}
-		uModelSpeaker, err := db.FindOneUserByField(ctx, models.UserModel{Login: userLogin}, models.FlagLogin)
+		uModelSpeaker, err := db.FindOneUserByField(ctx, mod.UserModel{Login: userLogin})
 		if err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusNotFound, common.NewError("profile", ErrUsersNotFound))
 			}
 			return
 		}
-		serialize := users.ProfileSerializer{c, uModelSpeaker}
+		serialize := usr.ProfileSerializer{c, uModelSpeaker}
 		profileResponse, err := serialize.Response(ctx, db)
 		if err != nil {
 			if err != context.DeadlineExceeded {
@@ -194,9 +216,9 @@ func ProfileRetrieve(db models.UserApproveFollowing) gin.HandlerFunc {
 	}
 }
 
-func ProfileFollow(db models.UserApproveFollowing) gin.HandlerFunc {
+func ProfileFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx := c.Request.Context()
+		ctx := context.WithValue(c.Request.Context(), mod.KeyFlagFiled, mod.FlagLogin)
 		if ctx.Err() != nil {
 			return
 		}
@@ -205,39 +227,35 @@ func ProfileFollow(db models.UserApproveFollowing) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, common.NewError("profile", ErrUsersInvalidProfile))
 			return
 		}
-		uModelFollower, ok := c.MustGet(services.UserModel).(models.UserModel)
-		if !ok {
-			c.AbortWithError(http.StatusInternalServerError, common.ErrCommonUnexpectedType)
-			return
-		}
-		uModelSpeaker, err := db.FindOneUserByField(ctx, models.UserModel{Login: userLogin}, models.FlagLogin)
+		uModelFollower := c.MustGet(mod.KeyUserModel).(mod.UserModel)
+		uModelSpeaker, err := db.FindOneUserByField(ctx, mod.UserModel{Login: userLogin})
 		if err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusNotFound, common.NewError("profile", ErrUsersNotFound))
 			}
 			return
 		}
-		if err := db.NewRelationship(ctx, uModelFollower, uModelSpeaker); err != nil {
+		if err := db.NewRelationship(ctx, []mod.UserModel{uModelFollower, uModelSpeaker}); err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusUnprocessableEntity, common.NewError("profile", err))
 			}
 			return
 		}
-		serialize := users.ProfileSerializer{c, uModelSpeaker}
-		profileresponse, err := serialize.Response(ctx, db)
+		serialize := usr.ProfileSerializer{c, uModelSpeaker}
+		profileResponse, err := serialize.Response(ctx, db)
 		if err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
 			}
 			return
 		}
-		c.JSON(http.StatusCreated, gin.H{"profile": profileresponse})
+		c.JSON(http.StatusCreated, gin.H{"profile": profileResponse})
 	}
 }
 
-func ProfileUnFollow(db models.UserApproveFollowing) gin.HandlerFunc {
+func ProfileUnFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx := c.Request.Context()
+		ctx := context.WithValue(c.Request.Context(), mod.KeyFlagFiled, mod.FlagLogin)
 		if ctx.Err() != nil {
 			return
 		}
@@ -246,25 +264,21 @@ func ProfileUnFollow(db models.UserApproveFollowing) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, common.NewError("profile", ErrUsersNotFound))
 			return
 		}
-		uModelFollowe, ok := c.MustGet(services.UserModel).(models.UserModel)
-		if !ok {
-			c.AbortWithError(http.StatusInternalServerError, common.ErrCommonUnexpectedType)
-			return
-		}
-		uModelSpeaker, err := db.FindOneUserByField(ctx, models.UserModel{Login: userLogin}, models.FlagLogin)
+		uModelFollowe := c.MustGet(mod.KeyUserModel).(mod.UserModel)
+		uModelSpeaker, err := db.FindOneUserByField(ctx, mod.UserModel{Login: userLogin})
 		if err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusNotFound, common.NewError("data_base", err))
 			}
 			return
 		}
-		if err := db.EndRelationship(c.Request.Context(), uModelFollowe, uModelSpeaker); err != nil {
+		if err := db.EndRelationship(c.Request.Context(), []mod.UserModel{uModelFollowe, uModelSpeaker}); err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusNotFound, common.NewError("data_base", err))
 			}
 			return
 		}
-		serialize := users.ProfileSerializer{c, uModelSpeaker}
+		serialize := usr.ProfileSerializer{c, uModelSpeaker}
 		profileResponse, err := serialize.Response(ctx, db)
 		if err != nil {
 			if err != context.DeadlineExceeded {
