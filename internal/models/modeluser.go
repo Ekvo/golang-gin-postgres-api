@@ -12,6 +12,7 @@ import (
 type UM = UserModel
 
 type UserModel struct {
+	// users table
 	ID        uint
 	Login     string
 	Password  string
@@ -21,7 +22,7 @@ type UserModel struct {
 	Email     string
 
 	CreatedAt      time.Time
-	UpdatedAT      *time.Time
+	UpdatedAt      *time.Time
 	LastConnection *time.Time
 
 	// users_acces table (0 1 2 3 4 5 6 7)
@@ -29,9 +30,14 @@ type UserModel struct {
 	// остальные - производное cуммы
 	// (4 + 1 + 2 = 7) - администратор с правами чтения и записи
 	Access string
+
 	// users_biography table
 	Image *string
 	Bio   *string //biography
+
+	// followers table
+	// Количесво уникальных подписчиков
+	NumberOfFollowers uint
 }
 
 // UserProperty - свойсва для поиска списка пользователей

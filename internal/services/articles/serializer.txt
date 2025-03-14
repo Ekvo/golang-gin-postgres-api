@@ -1,0 +1,26 @@
+func NewProfileResponse(uModel models.UserModel) ProfileResponse {
+	return ProfileResponse{
+		Login:             uModel.Login,
+		FirstName:         uModel.FirstName,
+		Image:             uModel.Image,
+		Bio:               uModel.Bio,
+		NumberOfFollowers: uModel.NumberOfFollowers,
+	}
+}
+
+func NewUserResponse(uModel models.UserModel) UserResponse {
+	return UserResponse{
+		Login:             uModel.Login,
+		FirstName:         uModel.FirstName,
+		LastName:          uModel.LastName,
+		Email:             uModel.Email,
+		Phone:             uModel.Phone,
+		Access:            uModel.Access,
+		Image:             uModel.Image,
+		Bio:               uModel.Bio,
+		CreatedAt:         uModel.CreatedAt,
+		UpdatedAT:         uModel.UpdatedAt,
+		LastConnection:    uModel.LastConnection,
+		NumberOfFollowers: uModel.NumberOfFollowers,
+	}
+}

@@ -39,7 +39,6 @@ func (acv *ArticleCreateValidator) Bind(c *gin.Context) error {
 	acv.aModel.Body = acv.Article.Body
 	acv.aModel.Tags = acv.Article.Tags
 	acv.aModel.CreatedAt = time.Now()
-
 	return nil
 }
 
@@ -65,7 +64,6 @@ func (tcv *TagCreateValidator) Bind(c *gin.Context) error {
 	tcv.tModel.Name = tcv.Tag.Name
 	tcv.tModel.AutorID = c.MustGet(models.KeyUserID).(uint)
 	tcv.tModel.CreatedAt = time.Now()
-
 	return nil
 }
 
@@ -91,7 +89,6 @@ func (ccv *CommentCreateValidator) Bind(c *gin.Context) error {
 	ccv.cModel.AutorID = c.MustGet(models.KeyUserID).(uint)
 	ccv.cModel.Body = ccv.Comment.Body
 	ccv.cModel.CreatedAt = time.Now()
-
 	return nil
 }
 
@@ -108,7 +105,7 @@ type ArticlePropertyValidator struct {
 	aProperty models.ArticleProperty `json:"-"`
 }
 
-func NewArticlePropertyRequestValidator() *ArticlePropertyValidator {
+func NewArticlePropertyValidator() *ArticlePropertyValidator {
 	return &ArticlePropertyValidator{}
 }
 

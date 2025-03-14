@@ -114,7 +114,7 @@ func UserRetrieve() gin.HandlerFunc {
 	}
 }
 
-func UsersRetrieve(db mod.UserApprove) gin.HandlerFunc {
+func UsersRetrieve(db mod.UserApproveFollowing) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		if ctx.Err() != nil {
@@ -136,8 +136,15 @@ func UsersRetrieve(db mod.UserApprove) gin.HandlerFunc {
 			c.JSON(http.StatusNoContent, gin.H{"empty": ""})
 			return
 		}
-		serialize := usr.UsersSerializer{c, usersList}
-		c.JSON(http.StatusOK, gin.H{"users": serialize.Response()})
+		serialize := usr.ProfileListSerializer{c, usersList}
+		userresponse, err := serialize.Response(db)
+		if err != nil {
+			if err != context.DeadlineExceeded {
+				c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
+			}
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"users": userresponse})
 	}
 }
 
@@ -154,7 +161,7 @@ func UserUpdate(db mod.UserApprove) gin.HandlerFunc {
 		}
 		uModel := modelValidator.Model()
 		uModel.ID = c.MustGet(mod.KeyUserID).(uint)
-		uModel.UpdatedAT = &uModel.CreatedAt
+		uModel.UpdatedAt = &uModel.CreatedAt
 		if err := db.NewDataUser(ctx, uModel); err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusUnprocessableEntity, common.NewError("data_base", err))
@@ -205,7 +212,7 @@ func ProfileRetrieve(db mod.UserApproveFollowing) gin.HandlerFunc {
 			return
 		}
 		serialize := usr.ProfileSerializer{c, uModelSpeaker}
-		profileResponse, err := serialize.Response(ctx, db)
+		profileResponse, err := serialize.Response(db)
 		if err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -222,11 +229,7 @@ func ProfileFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 		if ctx.Err() != nil {
 			return
 		}
-		userLogin, ok := common.IsValidParam(c, "nickname")
-		if !ok {
-			c.JSON(http.StatusBadRequest, common.NewError("profile", ErrUsersInvalidProfile))
-			return
-		}
+		userLogin := c.Param("nickname")
 		uModelFollower := c.MustGet(mod.KeyUserModel).(mod.UserModel)
 		uModelSpeaker, err := db.FindOneUserByField(ctx, mod.UserModel{Login: userLogin})
 		if err != nil {
@@ -235,14 +238,14 @@ func ProfileFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 			}
 			return
 		}
-		if err := db.NewRelationship(ctx, []mod.UserModel{uModelFollower, uModelSpeaker}); err != nil {
+		if err := db.NewRelationship(ctx, []uint{uModelFollower.ID, uModelSpeaker.ID}); err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusUnprocessableEntity, common.NewError("profile", err))
 			}
 			return
 		}
 		serialize := usr.ProfileSerializer{c, uModelSpeaker}
-		profileResponse, err := serialize.Response(ctx, db)
+		profileResponse, err := serialize.Response(db)
 		if err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -259,12 +262,7 @@ func ProfileUnFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 		if ctx.Err() != nil {
 			return
 		}
-		userLogin, ok := common.IsValidParam(c, "nickname")
-		if !ok {
-			c.JSON(http.StatusBadRequest, common.NewError("profile", ErrUsersNotFound))
-			return
-		}
-		uModelFollowe := c.MustGet(mod.KeyUserModel).(mod.UserModel)
+		userLogin := c.Param("nickname")
 		uModelSpeaker, err := db.FindOneUserByField(ctx, mod.UserModel{Login: userLogin})
 		if err != nil {
 			if err != context.DeadlineExceeded {
@@ -272,14 +270,15 @@ func ProfileUnFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 			}
 			return
 		}
-		if err := db.EndRelationship(c.Request.Context(), []mod.UserModel{uModelFollowe, uModelSpeaker}); err != nil {
+		uModelFollower := c.MustGet(mod.KeyUserModel).(mod.UserModel)
+		if err := db.EndRelationship(c.Request.Context(), []uint{uModelFollower.ID, uModelSpeaker.ID}); err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusNotFound, common.NewError("data_base", err))
 			}
 			return
 		}
 		serialize := usr.ProfileSerializer{c, uModelSpeaker}
-		profileResponse, err := serialize.Response(ctx, db)
+		profileResponse, err := serialize.Response(db)
 		if err != nil {
 			if err != context.DeadlineExceeded {
 				c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))

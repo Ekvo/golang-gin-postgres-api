@@ -173,6 +173,7 @@ func WhenEmptyStringThenNULL(s *string) sql.NullString {
 	return sql.NullString{*s, len(*s) != 0}
 }
 
+// strings.Trim(strings.Replace(fmt.Sprint([]int{1, 2, 3, 4}), " ", ",", -1), "[]")!!!!!!!
 // ArrayToLineForQuery - формализует массив в строку для запросов типа 'IN (line)'
 // возвращает строку для запроса и количесво записанных элеменов
 // []string{"abc","def"} -> "'abc','def'"

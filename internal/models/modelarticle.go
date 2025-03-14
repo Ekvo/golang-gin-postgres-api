@@ -15,12 +15,6 @@ const MaxLenSlug = 50
 // ArcticleTags - названия тегов связанных с определенной статьей 'ArticleModel'
 type ArcticleTags []string
 
-// AutorLoginAndID - характеристики атора
-type autorLoginAndID struct {
-	AutorID   uint
-	AutorName string
-}
-
 type ArticleModel struct {
 	ID uint
 
@@ -30,7 +24,7 @@ type ArticleModel struct {
 	// максимальный размер - 50
 	Title string
 
-	autorLoginAndID
+	AutorID uint
 
 	CreatedAt time.Time
 	UpdatedAt *time.Time
@@ -42,6 +36,9 @@ type ArticleModel struct {
 	Body string
 
 	Tags ArcticleTags
+
+	// Количесво уникальных пользователей  - отметивших статью как избранную
+	NumberOfLikes uint
 }
 
 // ArticleProperty - содержит набот свойсв - для поиска множества - 'ArticleModel'
@@ -82,10 +79,22 @@ type ArticleFind interface {
 	FindArticleList(ctx context.Context, data any) ([]ArticleModel, error)
 }
 
+type ArticleUpdateFind interface {
+	ArticleUpdate
+	ArticleFind
+}
+
 // ArticleFavorite - добавление удаление подписки пользователя на статью
 type ArticleFavorite interface {
 	ArticleToFavorite(ctx context.Context, data any) error
+	IsArticleFavorite(ctx context.Context, data any) (bool, error)
 	ArticleUnFovarite(ctx context.Context, data any) error
+}
+
+type ArticleWithAutor interface {
+	ArticleUpdateFind
+	ArticleFavorite
+	UserApproveFollowing
 }
 
 // TagModel - свойсва тега в базе
@@ -95,7 +104,7 @@ type TagModel struct {
 	// максимальный размер - 25
 	Name string
 
-	autorLoginAndID
+	AutorID uint
 
 	CreatedAt time.Time
 }
@@ -119,13 +128,23 @@ type TagFind interface {
 	TagsList(ctx context.Context, data any) ([]TagModel, error)
 }
 
+type TagUpdateFind interface {
+	TagUpdate
+	TagFind
+}
+
+type TagWithAutor interface {
+	TagUpdateFind
+	UserApproveFollowing
+}
+
 type CommentModel struct {
 	ID uint
 
 	ArticleID   uint
 	ArticleSlug string
 
-	autorLoginAndID
+	AutorID uint
 
 	CreatedAt time.Time
 	UpdatedAt *time.Time
@@ -158,4 +177,13 @@ type CommentUpdate interface {
 type CommentFind interface {
 	FindOneComment(ctx context.Context, data any) (CommentModel, error)
 	FindCommentList(ctx context.Context, data any) ([]CommentModel, error)
+}
+
+type CommentUpdateFind interface {
+	CommentUpdate
+	CommentFind
+}
+type CommentWihtAutor interface {
+	CommentUpdateFind
+	UserApproveFollowing
 }
