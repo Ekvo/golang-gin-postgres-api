@@ -20,11 +20,6 @@ var ErrSourceTagsCount = errors.New("count tags not equal")
 // ErrSourceBigSlug - контралирует длину 'articleModel.Slug','articleModel.Title' при создании, обновлении статьи
 var ErrSourceBigSlug = errors.New("slug or title is oversized")
 
-// ErrSourceNoUpdate - для маркировки отрицательного обновления, создания записей
-var ErrSourceNoUpdate = errors.New("no update or delete")
-
-var ErrSourceNotFound = errors.New("article not faound")
-
 func (s *SQLSource) SaveOneArticle(ctx context.Context, data any) (uint, error) {
 	articleModel := data.(models.ArticleModel)
 	if len(articleModel.Slug) > models.MaxLenSlug {

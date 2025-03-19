@@ -156,15 +156,6 @@ func HashData(line string) string {
 	return hex.EncodeToString(hashLine[:])
 }
 
-// IsValidParam - проверяет наличие значение по ключу в 'gin.Context.Params'
-func IsValidParam(c *gin.Context, key string) (string, bool) {
-	val := c.Param(key)
-	if len(val) == 0 {
-		return "", false
-	}
-	return val, true
-}
-
 // WhenEmptyStringThenNULL - для записи в базу данных значения - 'NULL' по заданным условиям
 func WhenEmptyStringThenNULL(s *string) sql.NullString {
 	if s == nil {
@@ -201,6 +192,10 @@ func ArrayToLineForQuery(data []string) (string, int) {
 type TimeRange struct {
 	StartDate time.Time
 	EndDate   time.Time
+}
+
+func (tr *TimeRange) IsRangeZero() bool {
+	return tr.StartDate.IsZero() || tr.EndDate.IsZero()
 }
 
 // LimitOffset - характеристики для SQL query

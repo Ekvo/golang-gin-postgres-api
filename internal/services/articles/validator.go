@@ -20,8 +20,8 @@ type ArticleCreateValidator struct {
 	aModel models.ArticleModel `json:"-"`
 }
 
-func NewArticleCreateValidator() *ArticleCreateValidator {
-	return &ArticleCreateValidator{}
+func NewArticleCreateValidator() ArticleCreateValidator {
+	return ArticleCreateValidator{}
 }
 
 func (acv *ArticleCreateValidator) Model() models.ArticleModel {
@@ -49,8 +49,8 @@ type TagCreateValidator struct {
 	tModel models.TagModel `json:"-"`
 }
 
-func NewTagCreateValidator() *TagCreateValidator {
-	return &TagCreateValidator{}
+func NewTagCreateValidator() TagCreateValidator {
+	return TagCreateValidator{}
 }
 
 func (tcv *TagCreateValidator) Model() models.TagModel {
@@ -74,8 +74,8 @@ type CommentCreateValidator struct {
 	cModel models.CommentModel `json:"-"`
 }
 
-func NewCommentCreateValidator() *CommentCreateValidator {
-	return &CommentCreateValidator{}
+func NewCommentCreateValidator() CommentCreateValidator {
+	return CommentCreateValidator{}
 }
 
 func (ccv *CommentCreateValidator) Model() models.CommentModel {
@@ -105,8 +105,8 @@ type ArticlePropertyValidator struct {
 	aProperty models.ArticleProperty `json:"-"`
 }
 
-func NewArticlePropertyValidator() *ArticlePropertyValidator {
-	return &ArticlePropertyValidator{}
+func NewArticlePropertyValidator() ArticlePropertyValidator {
+	return ArticlePropertyValidator{}
 }
 
 func (apv *ArticlePropertyValidator) Model() models.ArticleProperty {
@@ -148,8 +148,8 @@ type TagPropertyValidator struct {
 	tProperty models.TagPropery `json:"-"`
 }
 
-func NewTagPropertyValidator() *TagPropertyValidator {
-	return &TagPropertyValidator{}
+func NewTagPropertyValidator() TagPropertyValidator {
+	return TagPropertyValidator{}
 }
 
 func (tpv *TagPropertyValidator) Model() models.TagPropery {
@@ -189,8 +189,8 @@ type CommentPropertyValidator struct {
 	cProperty models.CommentProperty `json:"-"`
 }
 
-func NewCommentPropertyValidator() *CommentPropertyValidator {
-	return &CommentPropertyValidator{}
+func NewCommentPropertyValidator() CommentPropertyValidator {
+	return CommentPropertyValidator{}
 }
 
 func (cpv *CommentPropertyValidator) Model() models.CommentProperty {

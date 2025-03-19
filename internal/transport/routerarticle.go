@@ -138,7 +138,7 @@ func ArcticleUpdate(db mod.ArticleWithAutor) gin.HandlerFunc {
 func ArcticleRemove(db mod.ArticleUpdateFind) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		if ctx.Err != nil {
+		if ctx.Err() != nil {
 			return
 		}
 		userAccess := c.MustGet(mod.KeyUserAccess).(string)

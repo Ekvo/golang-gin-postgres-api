@@ -1,7 +1,6 @@
 package users
 
 import (
-	"errors"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -9,10 +8,6 @@ import (
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
-
-var ErrUsersValidatorPassword = errors.New("invalid password")
-
-type UCV = UserCreateValidator
 
 type UserCreateValidator struct {
 	User struct {
@@ -22,15 +17,15 @@ type UserCreateValidator struct {
 		LastName  string `form:"last_name" json:"last_name" binding:"omitempty,alpha,min=1,max=128"`
 		Phone     string `form:"phone" json:"phone" binding:"omitempty,e164"`
 		Email     string `form:"email" json:"email" binding:"required,email"`
-		Access    string `from:"access" json:"access" binding:"required,len=1,numeric,excludesall=89"`
+		Access    string `from:"access" json:"access" binding:"required,len=1,numeric,excludesall=56789"`
 		Image     string `form:"image" json:"image" binding:"omitempty,url"`
 		Bio       string `form:"biography" json:"biography" binding:"omitempty,max=512"`
 	} `json:"user_update"`
 	uModel models.UserModel `json:"-"`
 }
 
-func NewUserCreateValidator() *UserCreateValidator {
-	return &UserCreateValidator{}
+func NewUserCreateValidator() UserCreateValidator {
+	return UserCreateValidator{}
 }
 
 func (ucv *UserCreateValidator) Model() models.UserModel {
@@ -42,7 +37,10 @@ func (ucv *UserCreateValidator) Bind(c *gin.Context) error {
 		return err
 	}
 	ucv.uModel.Login = ucv.User.Login
-	if ucv.User.Password != common.TrickPassword {
+	if ucv.User.Password == common.TrickPassword {
+		user := c.MustGet(models.KeyUserModel).(models.UserModel)
+		ucv.uModel.Password = user.Password
+	} else {
 		ucv.uModel.Password = ucv.User.Password
 		_ = ucv.uModel.HashPassword()
 	}
@@ -62,11 +60,8 @@ func (ucv *UserCreateValidator) Bind(c *gin.Context) error {
 		ucv.uModel.Bio = &ucv.User.Bio
 	}
 	ucv.uModel.CreatedAt = time.Now()
-
 	return nil
 }
-
-type UCLV = UserConnectLoginValidator
 
 type UserConnectLoginValidator struct {
 	UserLogin struct {
@@ -76,8 +71,8 @@ type UserConnectLoginValidator struct {
 	uModel models.UserModel `json:"-"`
 }
 
-func NewUserConnectLoginValidator() *UserConnectLoginValidator {
-	return &UserConnectLoginValidator{}
+func NewUserConnectLoginValidator() UserConnectLoginValidator {
+	return UserConnectLoginValidator{}
 }
 
 func (ulv *UserConnectLoginValidator) Model() models.UserModel {
@@ -95,66 +90,6 @@ func (ulv *UserConnectLoginValidator) Bind(c *gin.Context) error {
 	return nil
 }
 
-type UCPV = UserConnectPhoneValidator
-
-type UserConnectPhoneValidator struct {
-	UserPhone struct {
-		Phone    string `form:"phone" json:"phone" binding:"required,e164"`
-		Password string `form:"password" json:"password" binding:"required,min=8max=255"`
-	} `json:"user_connect_wiht_phone"`
-	uModel models.UserModel `json:"-"`
-}
-
-func NewUserConnectPhoneValidator() *UserConnectPhoneValidator {
-	return &UserConnectPhoneValidator{}
-}
-
-func (upv *UserConnectPhoneValidator) Model() models.UserModel {
-	return upv.uModel
-}
-
-func (upv *UserConnectPhoneValidator) Bind(c *gin.Context) error {
-	if err := common.Bind(c, upv); err != nil {
-		return err
-	}
-	upv.uModel.Phone = &upv.UserPhone.Phone
-	upv.uModel.Password = upv.UserPhone.Password
-	timeConnect := time.Now()
-	upv.uModel.LastConnection = &timeConnect
-	return nil
-}
-
-type UCEV = UserConnectEmailValidator
-
-type UserConnectEmailValidator struct {
-	UserEmail struct {
-		Email    string `form:"email" json:"email" binding:"required,email"`
-		Password string `form:"password" json:"password" binding:"required,min=8,max=255"`
-	} `json:"user_connect_with_email"`
-	uModel models.UserModel `json:"-"`
-}
-
-func NewUserConnectEmailValidator() *UserConnectEmailValidator {
-	return &UserConnectEmailValidator{}
-}
-
-func (uev *UserConnectEmailValidator) Model() models.UserModel {
-	return uev.uModel
-}
-
-func (uev *UserConnectEmailValidator) Bind(c *gin.Context) error {
-	if err := common.Bind(c, uev); err != nil {
-		return err
-	}
-	uev.uModel.Email = uev.UserEmail.Email
-	uev.uModel.Password = uev.UserEmail.Password
-	timeConnect := time.Now()
-	uev.uModel.LastConnection = &timeConnect
-	return nil
-}
-
-type UPV = UserProperyValidator
-
 type UserProperyValidator struct {
 	Property struct {
 		FirstName string    `form:"first_name" json:"first_name" binding:"omitempty,alpha,min=1,max=128"`
@@ -167,8 +102,8 @@ type UserProperyValidator struct {
 	uProperty models.UserProperty `json:"-"`
 }
 
-func NewUserProperyValidator() *UserProperyValidator {
-	return &UserProperyValidator{}
+func NewUserProperyValidator() UserProperyValidator {
+	return UserProperyValidator{}
 }
 
 func (upv *UserProperyValidator) Model() models.UserProperty {
@@ -181,18 +116,9 @@ func (upv *UserProperyValidator) Bind(c *gin.Context) error {
 	}
 	upv.uProperty.FirstName = upv.Property.FirstName
 	upv.uProperty.LastName = upv.Property.LastName
-	if upv.Property.Limit == 0 {
-		upv.Property.Limit = 20
-	}
+	upv.uProperty.StartDate = upv.Property.StartDate
+	upv.uProperty.EndDate = upv.Property.EndDate
 	upv.uProperty.Limit = upv.Property.Limit
 	upv.uProperty.Offset = upv.Property.Offset
-	if start := upv.Property.StartDate; !start.IsZero() {
-		upv.uProperty.StartDate = start
-	}
-	if end := upv.Property.EndDate; !end.IsZero() {
-		upv.uProperty.EndDate = end
-	} else {
-		upv.uProperty.EndDate = time.Now()
-	}
 	return nil
 }

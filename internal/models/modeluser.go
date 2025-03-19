@@ -9,6 +9,7 @@ import (
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
 
+// alias - для удобсва
 type UM = UserModel
 
 type UserModel struct {
@@ -40,17 +41,6 @@ type UserModel struct {
 	NumberOfFollowers uint
 }
 
-// UserProperty - свойсва для поиска списка пользователей
-// см.'UserApprove' 'FindUserList(ctx context.Context, data any) ([]UserModel, error)'
-type UserProperty struct {
-	FirstName string
-	LastName  string
-
-	common.TimeRange
-
-	common.LimitOffset
-}
-
 // UserConnect - описывает регистрацию и подключение пользователя
 type UserConnect interface {
 	// SaveOneUser - запись данных пользователя и получение ногового, уникального ID
@@ -63,10 +53,15 @@ type UserConnect interface {
 
 // UserApprove - получение, обновление данных пользователя
 type UserApprove interface {
+	// FindOneUserByField - получение данных пользователя
+	//
+	// идея - передать данные с определенным флагом, для поиска по заданному имени столбца в базе данных
 	FindOneUserByField(ctx context.Context, data any) (UserModel, error)
 
+	// FindUserList - поиск пользователей по заданным параметрам переданным через 'data'
 	FindUserList(ctx context.Context, data any) ([]UserModel, error)
 
+	// NewDataUser - обновление данных пользователя
 	NewDataUser(ctx context.Context, data any) error
 }
 
@@ -77,6 +72,11 @@ type UserFollowing interface {
 
 	// IsRelationship(is following) - возращает наличие подписки 'userFolower' на 'userSpeaker'
 	IsRelationship(ctx context.Context, data any) (bool, error)
+
+	// IsRelationshipList - возвращает список профилей пользователей со статусом подписки на каждого
+	// относительно пользователя сделавшего запрос
+	// возвращает map[uint]bool - ключ speakerID, значение - статус наличия подписки
+	IsRelationshipList(ctx context.Context, data any) (map[uint]bool, error)
 
 	// EndRelationship(delete following) - удаляет статус подписки для выбранных пользователей
 	EndRelationship(ctx context.Context, data any) error
@@ -110,11 +110,34 @@ func (u *UserModel) ValidPassword() error {
 	return nil
 }
 
+var ErrModelsPassword = errors.New("invalid password")
+
 // 'u' - получен из базы данных и имеет захешированный пароль
 // checkPassword - сравнивает полученный пароль 'password' и пароль из 'UserMOdel'
 func (u *UserModel) CheckPassword(password string) bool {
 	hashPassword := common.HashData(password)
 	return u.Password == hashPassword
+}
+
+// UserProperty - свойсва для поиска списка пользователей
+// см.'UserApprove' 'FindUserList(ctx context.Context, data any) ([]UserModel, error)'
+type UserProperty struct {
+	FirstName string
+	LastName  string
+	common.TimeRange
+	common.LimitOffset
+}
+
+func (up *UserProperty) NoEmpty() bool {
+	// время invaild
+	if up.IsRangeZero() {
+		up.StartDate = time.Time{}
+	}
+	return len(up.FirstName) > 0 ||
+		len(up.LastName) > 0 ||
+		!up.TimeRange.StartDate.IsZero() ||
+		up.Limit != 0 ||
+		up.Offset != 0
 }
 
 // ErrSourceFlag - некорректный флага

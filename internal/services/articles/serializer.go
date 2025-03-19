@@ -2,12 +2,11 @@ package articles
 
 import (
 	"context"
-	"time"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users"
+	vr "github.com/Ekvo/golang-gin-postgres-api/internal/variables"
 )
 
 type ArcticleSerializer struct {
@@ -56,13 +55,13 @@ func (as *ArcticleSerializer) Response(db models.ArticleWithAutor) (ArcticleResp
 		Description:   as.Description,
 		Body:          as.Body,
 		Tags:          as.Tags,
-		CreatedAt:     as.CreatedAt.UTC().Format(time.RFC3339Nano),
+		CreatedAt:     as.CreatedAt.UTC().Format(vr.RFC3339Milli),
 		Autor:         autorResponse,
 		NumberOfLikes: as.NumberOfLikes,
 		Favorite:      favorite,
 	}
 	if as.UpdatedAt != nil {
-		articleResponse.UpdatedAt = as.UpdatedAt.Format(time.RFC3339Nano)
+		articleResponse.UpdatedAt = as.UpdatedAt.Format(vr.RFC3339Milli)
 	}
 	return articleResponse, nil
 }
@@ -112,7 +111,7 @@ func (ts *TagSerializer) Response(db models.UserApproveFollowing) (TagResponse, 
 		ID:        ts.ID,
 		Name:      ts.Name,
 		Autor:     autorResponse,
-		CreatedAt: ts.CreatedAt.Format(time.RFC3339Nano),
+		CreatedAt: ts.CreatedAt.Format(vr.RFC3339Milli),
 	}, nil
 }
 
@@ -161,11 +160,11 @@ func (cs *CommentSerialize) Response(db models.UserApproveFollowing) (CommentRes
 	commentResponse := CommentResponse{
 		ID:        cs.ID,
 		Body:      cs.Body,
-		CreatedAt: cs.CreatedAt.Format(time.RFC3339Nano),
+		CreatedAt: cs.CreatedAt.Format(vr.RFC3339Milli),
 		Autor:     autorResponse,
 	}
 	if cs.UpdatedAt != nil {
-		commentResponse.UpdatedAt = cs.UpdatedAt.Format(time.RFC3339Nano)
+		commentResponse.UpdatedAt = cs.UpdatedAt.Format(vr.RFC3339Milli)
 	}
 	return commentResponse, nil
 }

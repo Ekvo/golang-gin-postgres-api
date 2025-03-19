@@ -5,10 +5,19 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
+
+// ErrSourceAlreadyExists - во время регистрации(signup)
+var ErrSourceAlreadyExists = errors.New("user with this param already exists")
+
+// ErrSourceNoUpdate - для маркировки отрицательного обновления, создания записей
+var ErrSourceNoUpdate = errors.New("no update or delete")
+
+var ErrSourceNotFound = errors.New("data with current param not found")
 
 // UserSave - добавление пользователя в базу данных
 // в таблицы: 'users', 'users_access', 'users_biography', 'followers' - (с подпиской на себя)
@@ -68,7 +77,7 @@ func (s *SQLSource) LoginUserWithUpdateTime(ctx context.Context, data any) (mode
 		row := s.sourceDBTX.Tx.QueryRowContext(ctx, fmt.Sprintf(`
 WITH up_last_con AS (
     UPDATE users
-        SET last_connection = NOW()
+        SET last_connection = $2
         WHERE %s = $1
         RETURNING id,last_connection)
 SELECT u.id,
@@ -186,8 +195,9 @@ WHERE u.%s = $1;`, byField), param)
 }
 
 func (s *SQLSource) FindUserList(ctx context.Context, data any) ([]models.UserModel, error) {
-	userProperty := data.(models.UserProperty)
-	rows, err := s.sourceDBTX.DB.QueryContext(ctx, `
+	property := data.(models.UserProperty)
+	query := strings.Builder{}
+	query.WriteString(`
 SELECT u.id,
        u.login,
        u.hash_password,
@@ -206,28 +216,48 @@ SELECT u.id,
         WHERE id_user = u.id) AS unique_followers
 FROM users u
          JOIN users_access a ON u.id = a.id_user
-         JOIN users_biography b ON u.id = b.id_user
-WHERE u.created_at BETWEEN $3 AND $4
-  AND (
-    CASE
-        WHEN length($1) > 0 THEN u.first_name = $1
-        ELSE TRUE = TRUE --all first_names
-        END
-    )
-  AND (
-    CASE
-        WHEN length($2) > 0 THEN u.last_name = $2
-        ELSE TRUE = TRUE --all last_names
-        END)
-ORDER BY u.id
-LIMIT $5 OFFSET $6;`,
-		userProperty.FirstName, //1
-		userProperty.LastName,  //2
-		userProperty.StartDate, //3
-		userProperty.EndDate,   //4
-		userProperty.Limit,     //5
-		userProperty.Offset,    //6
-	)
+         JOIN users_biography b ON u.id = b.id_user`)
+	args := []any{}
+	if property.NoEmpty() {
+		numberOfArg := 1
+		and := false
+		query.WriteString("\nWHERE ")
+		if len(property.FirstName) > 0 {
+			query.WriteString(fmt.Sprintf("u.first_name = $%d", numberOfArg))
+			numberOfArg++
+			args = append(args, property.FirstName)
+			and = true
+		}
+		if len(property.LastName) > 0 {
+			if and {
+				query.WriteString("\nAND ")
+			}
+			query.WriteString(fmt.Sprintf("u.last_name = $%d", numberOfArg))
+			numberOfArg++
+			args = append(args, property.LastName)
+			and = true
+		}
+		if !property.StartDate.IsZero() {
+			if and {
+				query.WriteString("\nAND ")
+			}
+			query.WriteString(fmt.Sprintf("u.created_at BETWEEN $%d AND $%d", numberOfArg, numberOfArg+1))
+			numberOfArg += 2
+			args = append(args, property.StartDate)
+			args = append(args, property.EndDate)
+		}
+		if property.Limit != 0 {
+			query.WriteString(fmt.Sprintf("\nLIMIT $%d", numberOfArg))
+			numberOfArg++
+			args = append(args, property.Limit)
+		}
+		if property.Offset != 0 {
+			query.WriteString(fmt.Sprintf(" OFFSET $%d", numberOfArg))
+			args = append(args, property.Offset)
+		}
+	}
+	query.WriteByte(';')
+	rows, err := s.sourceDBTX.DB.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -256,14 +286,7 @@ func (s *SQLSource) NewDataUser(ctx context.Context, data any) error {
 WITH to_user AS (
     UPDATE users
         SET login = $2,
-            hash_password = (
-                CASE
-                    WHEN length($3) > 0 THEN $3
-                    ELSE (SELECT hash_password
-                          FROM users
-                          WHERE id = $1
-                          LIMIT 1)
-                    END),
+            hash_password = $3,
             first_name = $4,
             last_name = $5,
             phone = $6,
@@ -315,19 +338,42 @@ VALUES ($1, $2);`, followerSpeaker[1], followerSpeaker[0])
 }
 
 // IsRelationship - проверяет наличие уникальной связки ключей (id_user,id_folower)
-// data[0] - follower, data[1] - speaker
 func (s *SQLSource) IsRelationship(ctx context.Context, data any) (bool, error) {
 	followerSpeaker := data.([]uint)
 	if len(followerSpeaker) != 2 {
 		return false, ErrSourceRelationship
 	}
-	follow := false
+	subscription := false
 	err := s.sourceDBTX.DB.QueryRowContext(ctx, `
 SELECT EXISTS(SELECT *
               FROM followers
               WHERE id_user = $1
-                AND id_follower = $2);`, followerSpeaker[1], followerSpeaker[0]).Scan(&follow)
-	return follow, err
+                AND id_follower = $2);`, followerSpeaker[1], followerSpeaker[0]).Scan(&subscription)
+	return subscription, err
+}
+
+// IsRelationshipList - получение статус подписки пользователя полученного через context.Value()
+// на пользователей из списка переаднного череа 'data'
+func (s *SQLSource) IsRelationshipList(ctx context.Context, data any) (map[uint]bool, error) {
+	lineSpeakerID := data.([]uint)
+	followerID := ctx.Value(models.KeyUserID).(uint)
+	rows, err := s.sourceDBTX.DB.QueryContext(ctx, fmt.Sprintf(`
+SELECT id_user
+FROM followers
+WHERE id_user IN (%s)
+  AND id_follower = $1;`, lineSpeakerID), followerID)
+	if err != nil {
+		return nil, err
+	}
+	speakerFollow := make(map[uint]bool)
+	for rows.Next() {
+		var speakerID uint
+		if err := rows.Scan(&speakerID); err != nil {
+			return nil, err
+		}
+		speakerFollow[speakerID] = true
+	}
+	return speakerFollow, rows.Err()
 }
 
 // EndRelationship - удаляет уникальную связку ключей (id_user,id_folower)
