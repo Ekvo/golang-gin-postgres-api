@@ -1,22 +1,24 @@
-package transport
+package rest
 
 import (
 	"context"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	mod "github.com/Ekvo/golang-gin-postgres-api/internal/models"
-	usr "github.com/Ekvo/golang-gin-postgres-api/internal/services/users"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/autorization"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/flag"
+	ser "github.com/Ekvo/golang-gin-postgres-api/internal/services/serializer"
+	v "github.com/Ekvo/golang-gin-postgres-api/internal/services/validator"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
 
 // ctxTimeRequest - для инициализации ctx в запросах
 // context.WithTimeout(c.Request.Context(),ctxTimeRequest)
-const CTXUsersTimeRequest = 100500 * time.Millisecond
+const CTXUsersTimeRequest = 500 * time.Millisecond
 
 func UserBeforeRegister(router *gin.RouterGroup, db mod.UserConnect) {
 	router.POST("/signup", UserCreate(db))
@@ -38,7 +40,7 @@ func SpeakerFolower(router *gin.RouterGroup, db mod.UserApproveFollowing) {
 
 func UserCreate(db mod.UserConnect) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		modelValidator := usr.NewUserCreateValidator()
+		modelValidator := v.NewUserCreateValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -53,9 +55,9 @@ func UserCreate(db mod.UserConnect) gin.HandlerFunc {
 			c.JSON(http.StatusUnprocessableEntity, common.NewError("data_base", source.ErrSourceAlreadyExists))
 			return
 		}
-		usr.SetFlagsContext(c, uModelFromValidator)
+		autorization.SetFlagsContext(c, uModelFromValidator)
 
-		serialize := usr.TokenSerializer{c}
+		serialize := ser.TokenSerializer{c}
 		tokenResponse, err := serialize.Response()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -67,7 +69,7 @@ func UserCreate(db mod.UserConnect) gin.HandlerFunc {
 
 func UserLogin(db mod.UserConnect) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		modelValidator := usr.NewUserConnectLoginValidator()
+		modelValidator := v.NewUserConnectLoginValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -76,18 +78,15 @@ func UserLogin(db mod.UserConnect) gin.HandlerFunc {
 		ctx := context.WithValue(c.Request.Context(), flag.KeyFlagFiled, flag.FlagLogin)
 		user, errDB := db.LoginUserWithUpdateTime(ctx, uModelFromValidator)
 		if errDB != nil {
-			if errDB == context.DeadlineExceeded {
-				return
-			}
-			c.JSON(http.StatusNotFound, common.NewError("login", source.ErrSourceNotFound))
+			common.JSONWithContext(c, http.StatusNotFound, common.NewError("login", source.ErrSourceNotFound))
 			return
 		}
 		if !user.CheckPassword(uModelFromValidator.Password) {
 			c.JSON(http.StatusForbidden, common.NewError("login", mod.ErrModelsUserInvalidPassword))
 			return
 		}
-		usr.SetFlagsContext(c, user)
-		serialize := usr.TokenSerializer{c}
+		autorization.SetFlagsContext(c, user)
+		serialize := ser.TokenSerializer{c}
 		userResponse, err := serialize.Response()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -99,7 +98,7 @@ func UserLogin(db mod.UserConnect) gin.HandlerFunc {
 
 func UserRetrieve() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		serialize := usr.UserSerializer{c}
+		serialize := ser.UserSerializer{c}
 		userResponse, err := serialize.Response()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -111,7 +110,7 @@ func UserRetrieve() gin.HandlerFunc {
 
 func UserUpdate(db mod.UserApprove) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		modelValidator := usr.NewUserCreateValidator()
+		modelValidator := v.NewUserCreateValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -126,14 +125,14 @@ func UserUpdate(db mod.UserApprove) gin.HandlerFunc {
 			c.JSON(http.StatusUnprocessableEntity, common.NewError("data_base", err))
 			return
 		}
-		if err := usr.DataForContextUserModel(c, db, uModel.ID); err != nil {
+		if err := autorization.DataForContextUserModel(c, db, uModel.ID); err != nil {
 			if err == context.DeadlineExceeded {
 				return
 			}
 			c.JSON(http.StatusInternalServerError, common.NewError("data_base", err))
 			return
 		}
-		serialize := usr.UserSerializer{c}
+		serialize := ser.UserSerializer{c}
 		userResponse, err := serialize.Response()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
@@ -158,7 +157,7 @@ func ProfileRetrieve(db mod.UserApproveFollowing) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, common.NewError("profile", source.ErrSourceNotFound))
 			return
 		}
-		serialize := usr.ProfileSerializer{c, uModelSpeaker}
+		serialize := ser.ProfileSerializer{c, uModelSpeaker}
 		profileResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -192,7 +191,7 @@ func ProfileFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 			return
 		}
 		speaker.NumberOfFollowers++
-		serialize := usr.ProfileSerializer{c, speaker}
+		serialize := ser.ProfileSerializer{c, speaker}
 		profileResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -226,7 +225,7 @@ func ProfileUnFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 			return
 		}
 		speaker.NumberOfFollowers--
-		serialize := usr.ProfileSerializer{c, speaker}
+		serialize := ser.ProfileSerializer{c, speaker}
 		profileResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -241,7 +240,7 @@ func ProfileUnFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 
 func ProfileListRetrieve(db mod.UserApproveFollowing) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		modelValidator := usr.NewUserProperyValidator()
+		modelValidator := v.NewUserProperyValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -258,7 +257,7 @@ func ProfileListRetrieve(db mod.UserApproveFollowing) gin.HandlerFunc {
 			c.JSON(http.StatusNoContent, nil)
 			return
 		}
-		serialize := usr.ProfileListSerializer{c, usersList}
+		serialize := ser.ProfileListSerializer{c, usersList}
 		userresponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {

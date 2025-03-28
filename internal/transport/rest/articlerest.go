@@ -1,4 +1,4 @@
-package transport
+package rest
 
 import (
 	"context"
@@ -10,9 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 
 	mod "github.com/Ekvo/golang-gin-postgres-api/internal/models"
-	art "github.com/Ekvo/golang-gin-postgres-api/internal/services/articles"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/access"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/access"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/flag"
+	ser "github.com/Ekvo/golang-gin-postgres-api/internal/services/serializer"
+	v "github.com/Ekvo/golang-gin-postgres-api/internal/services/validator"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
@@ -54,7 +55,7 @@ func ArcticleCreate(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("access", access.ErrServicesUsersAccessDenied))
 			return
 		}
-		modelValidator := art.NewArticleCreateValidator()
+		modelValidator := v.NewArticleCreateValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator)
 			return
@@ -70,7 +71,7 @@ func ArcticleCreate(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, common.NewError("data_base", err))
 			return
 		}
-		serializer := art.ArcticleSerializer{c, articleModel}
+		serializer := ser.ArcticleSerializer{c, articleModel}
 		articleResponse, err := serializer.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -90,9 +91,9 @@ func ArcticleUpdate(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("access", access.ErrServicesUsersAccessDenied))
 			return
 		}
-		modelValidator := art.NewArticleCreateValidator()
+		modelValidator := v.NewArticleCreateValidator()
 		if err := modelValidator.Bind(c); err != nil {
-			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
+			common.JSONWithContext(c, http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
 		}
 		slug := c.Param("slug")
@@ -123,7 +124,7 @@ func ArcticleUpdate(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, common.NewError("article", source.ErrSourceNoUpdate))
 			return
 		}
-		serializer := art.ArcticleSerializer{c, newArticleData}
+		serializer := ser.ArcticleSerializer{c, newArticleData}
 		articleResponse, err := serializer.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -191,7 +192,7 @@ func ArcricleToFaorite(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, common.NewError("data_base", err))
 			return
 		}
-		serialize := art.ArcticleSerializer{c, article}
+		serialize := ser.ArcticleSerializer{c, article}
 		articleResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -227,7 +228,7 @@ func ArcticleUnFavorite(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, common.NewError("data_base", err))
 			return
 		}
-		serialize := art.ArcticleSerializer{c, article}
+		serialize := ser.ArcticleSerializer{c, article}
 		articleResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -246,7 +247,7 @@ func CommentCreate(db mod.CommentWihtAutor) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("access", access.ErrServicesUsersAccessDenied))
 			return
 		}
-		modelValidator := art.NewCommentCreateValidator()
+		modelValidator := v.NewCommentCreateValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -262,7 +263,7 @@ func CommentCreate(db mod.CommentWihtAutor) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, common.NewError("data_base", err))
 			return
 		}
-		serialize := art.CommentSerialize{c, comment}
+		serialize := ser.CommentSerialize{c, comment}
 		commentResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -282,7 +283,7 @@ func CommentUpdate(db mod.CommentWihtAutor) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("access", access.ErrServicesUsersAccessDenied))
 			return
 		}
-		modelValidator := art.NewCommentCreateValidator()
+		modelValidator := v.NewCommentCreateValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -319,7 +320,7 @@ func CommentUpdate(db mod.CommentWihtAutor) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, common.NewError("data_base", err))
 			return
 		}
-		serialize := art.CommentSerialize{c, newComment}
+		serialize := ser.CommentSerialize{c, newComment}
 		commentResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -375,7 +376,7 @@ func ArcticleRetrive(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("access", access.ErrServicesUsersAccessDenied))
 			return
 		}
-		modelValidator := art.NewArticlePropertyValidator()
+		modelValidator := v.NewArticlePropertyValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -389,7 +390,7 @@ func ArcticleRetrive(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, common.NewError("article", source.ErrSourceNotFound))
 			return
 		}
-		serialize := art.ArcticleSerializer{c, article}
+		serialize := ser.ArcticleSerializer{c, article}
 		articelResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -408,7 +409,7 @@ func CommentListRetrive(db mod.CommentWihtAutor) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("access", access.ErrServicesUsersAccessDenied))
 			return
 		}
-		modelValidator := art.NewCommentPropertyValidator()
+		modelValidator := v.NewCommentPropertyValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -422,7 +423,7 @@ func CommentListRetrive(db mod.CommentWihtAutor) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, common.NewError("comment_list", source.ErrSourceNotFound))
 			return
 		}
-		serialize := art.CommentListSerialize{c, commentList}
+		serialize := ser.CommentListSerialize{c, commentList}
 		commentListResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -441,7 +442,7 @@ func ArcticleListRetrive(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("access", access.ErrServicesUsersAccessDenied))
 			return
 		}
-		modelValidator := art.NewArticlePropertyValidator()
+		modelValidator := v.NewArticlePropertyValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -455,7 +456,7 @@ func ArcticleListRetrive(db mod.ArticleWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, common.NewError("access", source.ErrSourceNotFound))
 			return
 		}
-		serialize := art.ArcticleListSerializer{c, articleList}
+		serialize := ser.ArcticleListSerializer{c, articleList}
 		articleListresponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -474,7 +475,7 @@ func TagCreate(db mod.TagWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("access", access.ErrServicesUsersAccessDenied))
 			return
 		}
-		modelValidator := art.NewTagCreateValidator()
+		modelValidator := v.NewTagCreateValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -490,7 +491,7 @@ func TagCreate(db mod.TagWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, common.NewError("data_base", err))
 			return
 		}
-		serialize := art.TagSerializer{c, tag}
+		serialize := ser.TagSerializer{c, tag}
 		tagResponse, err := serialize.Response(db)
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -521,7 +522,7 @@ func TagRetrive(db mod.TagWithAutor) gin.HandlerFunc {
 			}
 			return
 		}
-		serialize := art.TagSerializer{c, tag}
+		serialize := ser.TagSerializer{c, tag}
 		tagResponse, err := serialize.Response(db)
 		if err != nil {
 			if err != context.DeadlineExceeded {
@@ -543,7 +544,7 @@ func TagListRetrive(db mod.TagWithAutor) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("access", access.ErrServicesUsersAccessDenied))
 			return
 		}
-		modelValidator := art.NewTagPropertyValidator()
+		modelValidator := v.NewTagPropertyValidator()
 		if err := modelValidator.Bind(c); err != nil {
 			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
@@ -555,7 +556,7 @@ func TagListRetrive(db mod.TagWithAutor) gin.HandlerFunc {
 			}
 			return
 		}
-		serialize := art.TagListSerializer{c, tagList}
+		serialize := ser.TagListSerializer{c, tagList}
 		tagListResponse, err := serialize.Response(db)
 		if err != nil {
 			if err != context.DeadlineExceeded {

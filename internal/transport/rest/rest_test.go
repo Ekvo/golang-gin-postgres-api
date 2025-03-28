@@ -1,10 +1,11 @@
-package transport
+package rest
 
 import (
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
+
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -17,7 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mod "github.com/Ekvo/golang-gin-postgres-api/internal/models"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/autorization"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/flag"
+	ser "github.com/Ekvo/golang-gin-postgres-api/internal/services/serializer"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
@@ -73,7 +76,7 @@ func (s *StoreMock) LoginUserWithUpdateTime(ctx context.Context, data any) (usr 
 	userLogin := data.(mod.UserModel)
 	if user, ex := s.store[userLogin.Login]; ex {
 		if !user.CheckPassword(userLogin.Password) {
-			err = mod.ErrModelsPassword
+			err = mod.ErrModelsUserInvalidPassword
 			return
 		}
 		user.LastConnection = userLogin.LastConnection
@@ -90,15 +93,15 @@ func (s *StoreMock) FindOneUserByField(ctx context.Context, data any) (usr mod.U
 		}
 	}()
 	userLogin := data.(mod.UserModel)
-	flag := ctx.Value(mod.KeyFlagFiled).(int)
+	fl := ctx.Value(flag.KeyFlagFiled).(int)
 	var user *mod.UserModel = nil
 	ex := false
-	if flag == mod.FlagLogin {
+	if fl == flag.FlagLogin {
 		user, ex = s.store[userLogin.Login]
-	} else if flag == mod.FlagID {
+	} else if fl == flag.FlagID {
 		user, ex = s.storeID[userLogin.ID]
 	} else {
-		err = errors.New("mosk flag find user")
+		err = errors.New("mock flag find user")
 	}
 	if ex {
 		user.NumberOfFollowers = uint(len(s.foolowers[user.ID]))
@@ -191,7 +194,7 @@ func (s *StoreMock) IsRelationshipList(ctx context.Context, data any) (speaker m
 		}
 	}()
 	lineSpeakerID := data.(string)
-	followerID := ctx.Value(mod.KeyUserID).(uint)
+	followerID := ctx.Value(flag.KeyUserID).(uint)
 	arrSpeakerID := getArrUint(lineSpeakerID)
 link:
 	for _, sp := range arrSpeakerID {
@@ -427,7 +430,7 @@ func getJWTTokenFromResponse(w *httptest.ResponseRecorder) {
 	res := w.Result()
 	defer res.Body.Close()
 	usr := struct {
-		users.TokenResponse `json:"approve"`
+		ser.TokenResponse `json:"approve"`
 	}{}
 	_ = json.NewDecoder(res.Body).Decode(&usr)
 	jwtTOken = usr.Token
@@ -442,7 +445,7 @@ func TestRouterUser(t *testing.T) {
 	first := router.Group("/zephyr")
 	first.Use(common.ContextMiddleware(CTXUsersTimeRequest))
 	UserBeforeRegister(first.Group("/connect"), store)
-	first.Use(users.Autorization(store))
+	first.Use(autorization.Autorization(store))
 	UserAfterRegister(first.Group("/user"), store)
 	SpeakerFolower(first.Group("/profile"), store)
 

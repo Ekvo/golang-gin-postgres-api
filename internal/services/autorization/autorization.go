@@ -1,9 +1,9 @@
-package users
+package autorization
 
 import (
 	"context"
 	"errors"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/flag"
 	"net/http"
 
 	"github.com/gin-gonic/gin"

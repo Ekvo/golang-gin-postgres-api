@@ -70,16 +70,21 @@ func Indeficator[T any](token *jwt.Token, key string) (T, error) {
 func ContextMiddleware(timeout time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
-
-		defer func() {
-			if ctx.Err() == context.DeadlineExceeded {
-				c.AbortWithStatus(http.StatusRequestTimeout)
-			}
-			cancel()
-		}()
+		defer cancel()
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
+}
+
+// JSONWithContext - with pair middleware 'ContextMiddleware' -> (look up)
+//
+// context.DeadlineExceeded -> don't write object to Response, set code in 'ContextMiddleware'
+func JSONWithContext(c *gin.Context, httpStatus int, obj any) {
+	if c.Request.Context().Err() == context.DeadlineExceeded {
+		c.AbortWithStatus(http.StatusRequestTimeout)
+		return
+	}
+	c.JSON(httpStatus, obj)
 }
 
 // ошибка для защиты от некоректного использования:

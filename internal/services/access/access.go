@@ -13,7 +13,7 @@ const (
 )
 
 func IsZeorAccess(access string) bool {
-	return validAccess(access) && access == zero
+	return access == zero
 }
 
 func validAccess(access string) bool {

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/flag"
 	"strings"
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"

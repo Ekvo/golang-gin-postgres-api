@@ -1,72 +1,16 @@
-package users
+package serializer
 
 import (
 	"context"
 	"fmt"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
-	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
-	vr "github.com/Ekvo/golang-gin-postgres-api/internal/variables"
-	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
-	"github.com/gin-gonic/gin"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/flag"
+	vr "github.com/Ekvo/golang-gin-postgres-api/internal/variables"
 )
-
-type TokenSerializer struct {
-	C *gin.Context
-}
-
-type TokenResponse struct {
-	Token string `json:"token"`
-}
-
-func (ts *TokenSerializer) Response() (TokenResponse, error) {
-	token, err := common.GenToken(ts.C.MustGet(flag.KeyUserID).(uint))
-	return TokenResponse{Token: token}, err
-}
-
-type UserSerializer struct {
-	C *gin.Context
-}
-
-// UserResponse - для пердачи персональных данных в личный кабинет пользователя
-type UserResponse struct {
-	ID        uint    `json:"-"`
-	Login     string  `json:"login"`
-	Password  string  `json:"-"`
-	FirstName string  `json:"first_name"`
-	LastName  *string `json:"last_name,omitempty"`
-	Phone     *string `json:"phone,omitempty"`
-	Email     string  `json:"email"`
-	Access    string  `json:"access"`
-	Image     *string `json:"image,omitempty"`
-	Bio       *string `json:"biography,omitempty"`
-
-	CreatedAt      string `json:"created_at"`
-	UpdatedAT      string `json:"updated_at,omitempty"`
-	LastConnection string `json:"last_connect,omitempty"`
-}
-
-func (us *UserSerializer) Response() (UserResponse, error) {
-	uModel := us.C.MustGet(flag.KeyUserModel).(models.UserModel)
-	userRespnse := UserResponse{
-		Login:     uModel.Login,
-		FirstName: uModel.FirstName,
-		LastName:  uModel.LastName,
-		Email:     uModel.Email,
-		Phone:     uModel.Phone,
-		Access:    uModel.Access,
-		Image:     uModel.Image,
-		Bio:       uModel.Bio,
-		CreatedAt: uModel.CreatedAt.UTC().Format(vr.RFC3339Milli),
-	}
-	if uModel.UpdatedAt != nil {
-		userRespnse.UpdatedAT = uModel.UpdatedAt.UTC().Format(vr.RFC3339Milli)
-	}
-	if uModel.LastConnection != nil {
-		userRespnse.LastConnection = uModel.LastConnection.UTC().Format(vr.RFC3339Milli)
-	}
-	return userRespnse, nil
-}
 
 type ProfileSerializer struct {
 	C *gin.Context
@@ -118,6 +62,7 @@ func (pls *ProfileListSerializer) Response(db models.UserFollowing) ([]ProfileRe
 	// array with users ID to string
 	lineSpeakerID := strings.Trim(strings.Replace(fmt.Sprint(pls.userIDList()), " ", ",", -1), "[]")
 	if len(lineSpeakerID) == 0 {
+		//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! need err
 		return nil, nil
 	}
 	ctx := context.WithValue(pls.C.Request.Context(), flag.KeyUserID, pls.C.MustGet(flag.KeyUserID).(uint))
