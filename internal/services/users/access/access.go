@@ -2,7 +2,7 @@ package access
 
 import "errors"
 
-var ErrAccessDenied = errors.New("access denied")
+var ErrServicesUsersAccessDenied = errors.New("access denied")
 
 const (
 	zero      = "0"

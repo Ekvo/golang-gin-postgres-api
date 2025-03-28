@@ -2,6 +2,7 @@ package articles
 
 import (
 	"context"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
 	"github.com/gin-gonic/gin"
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
@@ -33,12 +34,12 @@ type ArcticleResponse struct {
 
 func (as *ArcticleSerializer) Response(db models.ArticleWithAutor) (ArcticleResponse, error) {
 	ctx := as.C.Request.Context()
-	userID := as.C.MustGet(models.KeyUserID).(uint)
+	userID := as.C.MustGet(flag.KeyUserID).(uint)
 	favorite, err := db.IsArticleFavorite(ctx, []uint{as.ID, userID})
 	if err != nil {
 		return ArcticleResponse{}, err
 	}
-	ctx = context.WithValue(ctx, models.KeyFlagFiled, models.FlagID)
+	ctx = context.WithValue(ctx, flag.KeyFlagFiled, flag.FlagID)
 	autor, err := db.FindOneUserByField(ctx, models.UserModel{ID: as.AutorID})
 	if err != nil {
 		return ArcticleResponse{}, err
@@ -97,7 +98,7 @@ type TagResponse struct {
 }
 
 func (ts *TagSerializer) Response(db models.UserApproveFollowing) (TagResponse, error) {
-	ctx := context.WithValue(ts.C.Request.Context(), models.KeyFlagFiled, models.FlagID)
+	ctx := context.WithValue(ts.C.Request.Context(), flag.KeyFlagFiled, flag.FlagID)
 	autor, err := db.FindOneUserByField(ctx, models.UserModel{ID: ts.AutorID})
 	if err != nil {
 		return TagResponse{}, err
@@ -147,7 +148,7 @@ type CommentResponse struct {
 }
 
 func (cs *CommentSerialize) Response(db models.UserApproveFollowing) (CommentResponse, error) {
-	ctx := context.WithValue(cs.C.Request.Context(), models.KeyFlagFiled, models.FlagID)
+	ctx := context.WithValue(cs.C.Request.Context(), flag.KeyFlagFiled, flag.FlagID)
 	autor, err := db.FindOneUserByField(ctx, models.UserModel{ID: cs.AutorID})
 	if err != nil {
 		return CommentResponse{}, err

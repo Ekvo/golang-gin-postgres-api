@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
 	"log"
 	"time"
 
@@ -75,26 +76,24 @@ FROM to_articles;`, lineTagsName),
 	return articleModel.ID, s.sourceDBTX.Transaction(ctx, insertArticle)
 }
 
+// NewDataArticle - вставляем новые данные относительно текущей статьи
+// в начале удаляем все записи о тегах далее запишем новые (чтобы не делать сравнений)
 func (s *SQLSource) NewDataArticle(ctx context.Context, data any) error {
 	updateArticle := func(ctx context.Context) error {
 		articleModel := data.(models.ArticleModel)
 		lineTagsName, countTags := common.ArrayToLineForQuery(articleModel.Tags)
 		newRowsInArticleTags := 0
-		// удаляем старую связь тегов и статьи	в последующем создадим новую
-		_, err := s.sourceDBTX.Tx.ExecContext(ctx, `
-FROM articles_tags
-WHERE id_article = $1;`, articleModel.ID)
-		if err != nil {
-			return err
-		}
-
-		err = s.sourceDBTX.Tx.QueryRowContext(ctx, fmt.Sprintf(`
-WITH to_articles AS (
-    UPDATE articles
-        SET slug = $2,
-            title = $3,
-            updated_at = $4
-        WHERE id = $1),
+		err := s.sourceDBTX.Tx.QueryRowContext(ctx, fmt.Sprintf(`
+WITH del_tags AS (
+    DELETE
+        FROM articles_tags
+            WHERE id_article = $1),
+     to_articles AS (
+         UPDATE articles
+             SET slug = $2,
+                 title = $3,
+                 updated_at = $4
+             WHERE id = $1),
      to_articles_body AS (
          UPDATE articles_body
              SET description = $5,
@@ -239,7 +238,7 @@ func scanArcticleModel[T SQLRowsRowScan](rows T) (models.ArticleModel, error) {
 
 func (s *SQLSource) FindArticleList(ctx context.Context, data any) ([]models.ArticleModel, error) {
 	arcticleProperty := data.(models.ArticleProperty)
-	userID := ctx.Value(models.KeyUserID).(uint)
+	userID := ctx.Value(flag.KeyUserID).(uint)
 	tagsLine, _ := common.ArrayToLineForQuery(arcticleProperty.Tags)
 	queryBody := fmt.Sprintf(`
 SELECT a.id,
@@ -331,7 +330,7 @@ func scanArcticles(rows *sql.Rows) ([]models.ArticleModel, error) {
 }
 
 func (s *SQLSource) ArticleToFavorite(ctx context.Context, data any) error {
-	userID := ctx.Value(models.KeyUserID).(uint)
+	userID := ctx.Value(flag.KeyUserID).(uint)
 	insertArticleFavorite := func(ctx context.Context) error {
 		slug := data.(string)
 		_, err := s.sourceDBTX.DB.ExecContext(ctx, `
@@ -361,7 +360,7 @@ SELECT EXISTS(SELECT id_article, id_user
 }
 
 func (s *SQLSource) ArticleUnFovarite(ctx context.Context, data any) error {
-	userID := ctx.Value(models.KeyUserID).(uint)
+	userID := ctx.Value(flag.KeyUserID).(uint)
 	deleteArticleFavorite := func(ctx context.Context) error {
 		slug := data.(string)
 		_, err := s.sourceDBTX.DB.ExecContext(ctx, `

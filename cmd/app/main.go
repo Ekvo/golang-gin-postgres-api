@@ -24,7 +24,16 @@ host=127.0.0.1 port=5432 user=postgres password=1234567 dbname=zephyr sslmode=di
 		}
 	}()
 
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS NEW1
+(
+    id serial
+);`)
+	if err != nil {
+		return
+	}
+
 	store := source.NewSQLSource(db)
+
 	router := gin.Default()
 
 	first := router.Group("/zephyr")

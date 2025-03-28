@@ -77,7 +77,6 @@ func ContextMiddleware(timeout time.Duration) gin.HandlerFunc {
 			}
 			cancel()
 		}()
-
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}

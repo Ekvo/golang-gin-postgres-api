@@ -3,24 +3,25 @@ package models
 import (
 	"context"
 	"errors"
-	"strconv"
 	"time"
 
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
 
-// alias - для удобсва
+// alias - for comfortable
 type UM = UserModel
 
 type UserModel struct {
-	// users table
-	ID        uint
-	Login     string
-	Password  string
+	ID uint
+
+	Login    string
+	Password string
+
 	FirstName string
 	LastName  *string
-	Phone     *string
-	Email     string
+
+	Phone *string
+	Email string
 
 	CreatedAt      time.Time
 	UpdatedAt      *time.Time
@@ -88,116 +89,15 @@ type UserApproveFollowing interface {
 	UserFollowing
 }
 
-func (u *UserModel) HashPassword() error {
-	if err := u.ValidPassword(); err != nil {
-		return err
-	}
+var ErrModelsUserInvalidPassword = errors.New("invalid password")
+
+func (u *UserModel) HashPassword() {
 	u.Password = common.HashData(u.Password)
-	return nil
 }
-
-const (
-	minLenghtPassword = 8
-	maxLenghtPassword = 255
-)
-
-func (u *UserModel) ValidPassword() error {
-	lenghtPassword := len(u.Password)
-	if minLenghtPassword > lenghtPassword ||
-		lenghtPassword > maxLenghtPassword {
-		return errors.New("incorrect lenght of password")
-	}
-	return nil
-}
-
-var ErrModelsPassword = errors.New("invalid password")
 
 // 'u' - получен из базы данных и имеет захешированный пароль
 // checkPassword - сравнивает полученный пароль 'password' и пароль из 'UserMOdel'
 func (u *UserModel) CheckPassword(password string) bool {
 	hashPassword := common.HashData(password)
 	return u.Password == hashPassword
-}
-
-// UserProperty - свойсва для поиска списка пользователей
-// см.'UserApprove' 'FindUserList(ctx context.Context, data any) ([]UserModel, error)'
-type UserProperty struct {
-	FirstName string
-	LastName  string
-	common.TimeRange
-	common.LimitOffset
-}
-
-func (up *UserProperty) NoEmpty() bool {
-	// время invaild
-	if up.IsRangeZero() {
-		up.StartDate = time.Time{}
-	}
-	return len(up.FirstName) > 0 ||
-		len(up.LastName) > 0 ||
-		!up.TimeRange.StartDate.IsZero() ||
-		up.Limit != 0 ||
-		up.Offset != 0
-}
-
-// ErrSourceFlag - некорректный флага
-var ErrSourceFlag = errors.New("unexpected flag")
-
-// ключи для записи в 'gin.Context.Keys'
-const (
-	// храним в формате 'uint'
-	KeyUserID = "user_id"
-
-	// храним в формате 'string'
-	KeyUserAccess = "user_access"
-
-	// храним в формате 'UserModel'
-	KeyUserModel = "user_model"
-
-	// храним в формате 'int'
-	KeyFlagFiled = "flag_filed"
-)
-
-// маркеры для поиска по полю 'UserModel'
-const (
-	FlagID = iota + 1
-	FlagLogin
-	FlagPhone
-	FlagEmail
-)
-
-// хранение имени полей из 'UserMOdel'
-var flagsName = []string{"unknown", "id", "login", "phone", "email"}
-
-func FlagName(flag int) string {
-	if flag < 1 || flag >= len(flagsName) {
-		flag = 0
-	}
-	return flagsName[flag]
-}
-
-// findByField - определяет поле и параметр из 'UserModel' для поиска в базе данных
-func FindByFieldWithKey(user UserModel, flag int) (string, string, error) {
-	field, param := FlagName(flag), ""
-	if field == "unknown" {
-		return "", "", ErrSourceFlag
-	}
-	switch flag {
-	case FlagID:
-		param = strconv.Itoa(int(user.ID))
-	case FlagLogin:
-		param = user.Login
-	case FlagPhone:
-		if user.Phone != nil {
-			param = *user.Phone
-		}
-	case FlagEmail:
-		param = user.Email
-	default:
-		return "", "", ErrSourceFlag
-	}
-	if len(param) < 1 {
-		return "", "", errors.New("can't find by empty param")
-	}
-	return field, param, nil
 }

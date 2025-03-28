@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
 	"strings"
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
@@ -12,12 +13,12 @@ import (
 )
 
 // ErrSourceAlreadyExists - во время регистрации(signup)
-var ErrSourceAlreadyExists = errors.New("user with this param already exists")
+var ErrSourceAlreadyExists = errors.New("resource already exists")
 
 // ErrSourceNoUpdate - для маркировки отрицательного обновления, создания записей
 var ErrSourceNoUpdate = errors.New("no update or delete")
 
-var ErrSourceNotFound = errors.New("data with current param not found")
+var ErrSourceNotFound = errors.New("resource not found")
 
 // UserSave - добавление пользователя в базу данных
 // в таблицы: 'users', 'users_access', 'users_biography', 'followers' - (с подпиской на себя)
@@ -67,10 +68,10 @@ FROM to_users`,
 // 'flag_field' из 'context.Value'
 func (s *SQLSource) LoginUserWithUpdateTime(ctx context.Context, data any) (models.UserModel, error) {
 	var user models.UserModel
-	flag := ctx.Value(models.KeyFlagFiled).(int)
+	fl := ctx.Value(flag.KeyFlagFiled).(int)
 	loginWithUpdateUser := func(ctx context.Context) error {
 		userModel := data.(models.UserModel)
-		byField, param, err := models.FindByFieldWithKey(userModel, flag)
+		byField, param, err := flag.FindByFieldWithKey(userModel, fl)
 		if err != nil {
 			return err
 		}
@@ -165,8 +166,8 @@ func scanUserModel[T SQLRowsRowScan](row T) (models.UserModel, error) {
 // 'flag_field' из 'context.Value'
 func (s *SQLSource) FindOneUserByField(ctx context.Context, data any) (models.UserModel, error) {
 	userModel := data.(models.UserModel)
-	flag := ctx.Value(models.KeyFlagFiled).(int)
-	byField, param, err := models.FindByFieldWithKey(userModel, flag)
+	fl := ctx.Value(flag.KeyFlagFiled).(int)
+	byField, param, err := flag.FindByFieldWithKey(userModel, fl)
 	if err != nil {
 		return userModel, err
 	}
@@ -356,7 +357,7 @@ SELECT EXISTS(SELECT *
 // на пользователей из списка переаднного череа 'data'
 func (s *SQLSource) IsRelationshipList(ctx context.Context, data any) (map[uint]bool, error) {
 	lineSpeakerID := data.([]uint)
-	followerID := ctx.Value(models.KeyUserID).(uint)
+	followerID := ctx.Value(flag.KeyUserID).(uint)
 	rows, err := s.sourceDBTX.DB.QueryContext(ctx, fmt.Sprintf(`
 SELECT id_user
 FROM followers
@@ -382,13 +383,110 @@ func (s *SQLSource) EndRelationship(ctx context.Context, data any) error {
 	if len(followerSpeaker) != 2 {
 		return ErrSourceRelationship
 	}
+	deleteRows := 0
 	deleteRelationship := func(ctx context.Context) error {
-		_, err := s.sourceDBTX.Tx.ExecContext(ctx, `
-DELETE
-FROM followers
-WHERE id_user = $1
-  AND id_follower = $2 LIMIT 1;`, followerSpeaker[1], followerSpeaker[0])
-		return err
+		err := s.sourceDBTX.Tx.QueryRowContext(ctx, `
+WITH del_relationship AS (
+    DELETE
+        FROM followers
+            WHERE (id_user, id_follower) = ($1, $2)
+					RETURNING *)
+SELECT COUNT(*)
+FROM del_relationship;`, followerSpeaker[1], followerSpeaker[0]).Scan(&deleteRows)
+		if err != nil {
+			return err
+		}
+		if deleteRows != 1 {
+			return ErrSourceNotFound
+		}
+		return nil
 	}
 	return s.sourceDBTX.Transaction(ctx, deleteRelationship)
+}
+
+// ErrSourceMainUser - ошибка удаления пользователя с индексом '1'
+var ErrSourceMainUser = errors.New("main user cannot be deleted")
+
+// DeleteUser - в струтуре базы user играет ключивую роль (references)
+// полное удаление  может с большой вероятностью задеть данные иных пользоватлей
+// например, если удаляеться создатель тега
+//
+// выход: теги становяться частью пользователя с ID =  1 (собсвенностью компании)
+// остальное полностью удаляется
+//
+// 'delRows' - проверяет количесво удаленный пользователей 'delRows!=1 -> Rollback'
+func (s *SQLSource) DeleteOneUser(ctx context.Context, data any) error {
+	userID := data.(uint)
+	if userID == 1 {
+		return ErrSourceMainUser
+	}
+	deleteUser := func(ctx context.Context) error {
+		delRows := 0
+		err := s.sourceDBTX.Tx.QueryRowContext(ctx, `
+WITH tag_update AS (
+    UPDATE tags
+        SET id_tag_maker = 1
+        WHERE id_tag_maker = $1),
+     id_comment AS (SELECT DISTINCT id
+                    FROM comments
+                    WHERE id_autor = $1
+                       OR id_article IN (SELECT id
+                                         FROM articles
+                                         WHERE id_autor = $1)),
+     del_body_comment AS (
+         DELETE
+             FROM comments_body
+                 WHERE id_comment IN (SELECT id from id_comment)),
+     del_comment AS (
+         DELETE
+             FROM comments
+                 WHERE id IN (SELECT ID from id_comment)),
+     del_favorite_article AS (
+         DELETE
+             FROM articles_favorite
+                 WHERE id_user = $1),
+     del_article_tag AS (
+         DELETE
+             FROM articles_tags
+                 WHERE id_article IN (SELECT id
+                                      FROM articles
+                                      WHERE id_autor = $1)),
+     del_body_article AS (
+         DELETE
+             FROM articles_body
+                 WHERE id_article IN (SELECT id
+                                      FROM articles
+                                      WHERE id_autor = $1)),
+     del_article AS (
+         DELETE
+             FROM articles
+                 WHERE id_autor = $1),
+     del_followers AS (
+         DELETE
+             FROM followers
+                 WHERE id_user = $1),
+     del_user_access AS (
+         DELETE
+             FROM users_access
+                 WHERE id_user = $1),
+     del_body_user AS (
+         DELETE
+             FROM users_biography
+                 WHERE id_user = $1),
+     del_user AS (
+         DELETE
+             FROM users
+                 WHERE id = $1
+                 RETURNING *)
+SELECT COUNT(*)
+FROM del_user;`, userID).Scan(&delRows)
+		if err != nil {
+			return err
+		}
+		if delRows != 1 {
+			return ErrSourceNotFound
+		}
+		return nil
+	}
+	return s.sourceDBTX.Transaction(ctx, deleteUser)
 }

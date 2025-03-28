@@ -2,7 +2,7 @@ package transport
 
 import (
 	"context"
-	"errors"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
 	"net/http"
 	"time"
 
@@ -73,7 +73,7 @@ func UserLogin(db mod.UserConnect) gin.HandlerFunc {
 			return
 		}
 		uModelFromValidator := modelValidator.Model()
-		ctx := context.WithValue(c.Request.Context(), mod.KeyFlagFiled, mod.FlagLogin)
+		ctx := context.WithValue(c.Request.Context(), flag.KeyFlagFiled, flag.FlagLogin)
 		user, errDB := db.LoginUserWithUpdateTime(ctx, uModelFromValidator)
 		if errDB != nil {
 			if errDB == context.DeadlineExceeded {
@@ -83,7 +83,7 @@ func UserLogin(db mod.UserConnect) gin.HandlerFunc {
 			return
 		}
 		if !user.CheckPassword(uModelFromValidator.Password) {
-			c.JSON(http.StatusForbidden, common.NewError("login", mod.ErrModelsPassword))
+			c.JSON(http.StatusForbidden, common.NewError("login", mod.ErrModelsUserInvalidPassword))
 			return
 		}
 		usr.SetFlagsContext(c, user)
@@ -117,7 +117,7 @@ func UserUpdate(db mod.UserApprove) gin.HandlerFunc {
 			return
 		}
 		uModel := modelValidator.Model()
-		uModel.ID = c.MustGet(mod.KeyUserID).(uint)
+		uModel.ID = c.MustGet(flag.KeyUserID).(uint)
 		uModel.UpdatedAt = &uModel.CreatedAt
 		if err := db.NewDataUser(c.Request.Context(), uModel); err != nil {
 			if err == context.DeadlineExceeded {
@@ -143,25 +143,19 @@ func UserUpdate(db mod.UserApprove) gin.HandlerFunc {
 	}
 }
 
-// ErrUsersInvalidProfile - если запрос пришел с пустым параметром 'nickname'
-var ErrUsersInvalidProfile = errors.New("invalid login")
-
-// ErrUsersNotFound - пользователь ненайден
-var ErrUsersNotFound = errors.New("not faound")
-
 // ProfileRetrieve - проверят имеет ли подписку текуший пользователь из c.Keys[userModel]
 //
 //	на 'userLogin' полученного в базе при помощи 'login' из 'c.Param'
 func ProfileRetrieve(db mod.UserApproveFollowing) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userLogin := c.Param("nickname")
-		ctx := context.WithValue(c.Request.Context(), mod.KeyFlagFiled, mod.FlagLogin)
+		ctx := context.WithValue(c.Request.Context(), flag.KeyFlagFiled, flag.FlagLogin)
 		uModelSpeaker, err := db.FindOneUserByField(ctx, mod.UserModel{Login: userLogin})
 		if err != nil {
 			if err == context.DeadlineExceeded {
 				return
 			}
-			c.JSON(http.StatusNotFound, common.NewError("profile", ErrUsersNotFound))
+			c.JSON(http.StatusNotFound, common.NewError("profile", source.ErrSourceNotFound))
 			return
 		}
 		serialize := usr.ProfileSerializer{c, uModelSpeaker}
@@ -180,21 +174,21 @@ func ProfileRetrieve(db mod.UserApproveFollowing) gin.HandlerFunc {
 func ProfileFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userLogin := c.Param("nickname")
-		ctx := context.WithValue(c.Request.Context(), mod.KeyFlagFiled, mod.FlagLogin)
+		ctx := context.WithValue(c.Request.Context(), flag.KeyFlagFiled, flag.FlagLogin)
 		speaker, err := db.FindOneUserByField(ctx, mod.UserModel{Login: userLogin})
 		if err != nil {
 			if err == context.DeadlineExceeded {
 				return
 			}
-			c.JSON(http.StatusNotFound, common.NewError("profile", ErrUsersNotFound))
+			c.JSON(http.StatusNotFound, common.NewError("profile", source.ErrSourceNotFound))
 			return
 		}
-		userID := c.MustGet(mod.KeyUserID).(uint)
+		userID := c.MustGet(flag.KeyUserID).(uint)
 		if err := db.NewRelationship(ctx, []uint{userID, speaker.ID}); err != nil {
 			if err == context.DeadlineExceeded {
 				return
 			}
-			c.JSON(http.StatusUnprocessableEntity, common.NewError("profile", err))
+			c.JSON(http.StatusConflict, common.NewError("relationship", source.ErrSourceAlreadyExists))
 			return
 		}
 		speaker.NumberOfFollowers++
@@ -214,7 +208,7 @@ func ProfileFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 func ProfileUnFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userLogin := c.Param("nickname")
-		ctx := context.WithValue(c.Request.Context(), mod.KeyFlagFiled, mod.FlagLogin)
+		ctx := context.WithValue(c.Request.Context(), flag.KeyFlagFiled, flag.FlagLogin)
 		speaker, err := db.FindOneUserByField(ctx, mod.UserModel{Login: userLogin})
 		if err != nil {
 			if err == context.DeadlineExceeded {
@@ -223,12 +217,12 @@ func ProfileUnFollow(db mod.UserApproveFollowing) gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, common.NewError("data_base", err))
 			return
 		}
-		userID := c.MustGet(mod.KeyUserID).(uint)
+		userID := c.MustGet(flag.KeyUserID).(uint)
 		if err := db.EndRelationship(c.Request.Context(), []uint{userID, speaker.ID}); err != nil {
 			if err == context.DeadlineExceeded {
 				return
 			}
-			c.JSON(http.StatusNotFound, common.NewError("data_base", err))
+			c.JSON(http.StatusNotFound, common.NewError("relationship", err))
 			return
 		}
 		speaker.NumberOfFollowers--

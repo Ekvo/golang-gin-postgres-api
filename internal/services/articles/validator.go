@@ -1,6 +1,7 @@
 package articles
 
 import (
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,7 @@ func (acv *ArticleCreateValidator) Bind(c *gin.Context) error {
 	}
 	acv.aModel.Slug = slug.Make(acv.Article.Title)
 	acv.aModel.Title = acv.Article.Title
-	acv.aModel.AutorID = c.MustGet(models.KeyUserID).(uint)
+	acv.aModel.AutorID = c.MustGet(flag.KeyUserID).(uint)
 	acv.aModel.Description = acv.Article.Description
 	acv.aModel.Body = acv.Article.Body
 	acv.aModel.Tags = acv.Article.Tags
@@ -62,7 +63,7 @@ func (tcv *TagCreateValidator) Bind(c *gin.Context) error {
 		return err
 	}
 	tcv.tModel.Name = tcv.Tag.Name
-	tcv.tModel.AutorID = c.MustGet(models.KeyUserID).(uint)
+	tcv.tModel.AutorID = c.MustGet(flag.KeyUserID).(uint)
 	tcv.tModel.CreatedAt = time.Now()
 	return nil
 }
@@ -86,7 +87,7 @@ func (ccv *CommentCreateValidator) Bind(c *gin.Context) error {
 	if err := common.Bind(c, ccv); err != nil {
 		return err
 	}
-	ccv.cModel.AutorID = c.MustGet(models.KeyUserID).(uint)
+	ccv.cModel.AutorID = c.MustGet(flag.KeyUserID).(uint)
 	ccv.cModel.Body = ccv.Comment.Body
 	ccv.cModel.CreatedAt = time.Now()
 	return nil

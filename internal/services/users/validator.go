@@ -1,6 +1,7 @@
 package users
 
 import (
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -38,11 +39,11 @@ func (ucv *UserCreateValidator) Bind(c *gin.Context) error {
 	}
 	ucv.uModel.Login = ucv.User.Login
 	if ucv.User.Password == common.TrickPassword {
-		user := c.MustGet(models.KeyUserModel).(models.UserModel)
+		user := c.MustGet(flag.KeyUserModel).(models.UserModel)
 		ucv.uModel.Password = user.Password
 	} else {
 		ucv.uModel.Password = ucv.User.Password
-		_ = ucv.uModel.HashPassword()
+		ucv.uModel.HashPassword()
 	}
 	ucv.uModel.FirstName = ucv.User.FirstName
 	if len(ucv.User.LastName) > 0 {

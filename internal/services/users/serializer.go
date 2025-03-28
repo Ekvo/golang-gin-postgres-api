@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
+	"github.com/Ekvo/golang-gin-postgres-api/internal/services/users/flag"
 	vr "github.com/Ekvo/golang-gin-postgres-api/internal/variables"
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 	"github.com/gin-gonic/gin"
@@ -19,7 +20,7 @@ type TokenResponse struct {
 }
 
 func (ts *TokenSerializer) Response() (TokenResponse, error) {
-	token, err := common.GenToken(ts.C.MustGet(models.KeyUserID).(uint))
+	token, err := common.GenToken(ts.C.MustGet(flag.KeyUserID).(uint))
 	return TokenResponse{Token: token}, err
 }
 
@@ -46,7 +47,7 @@ type UserResponse struct {
 }
 
 func (us *UserSerializer) Response() (UserResponse, error) {
-	uModel := us.C.MustGet(models.KeyUserModel).(models.UserModel)
+	uModel := us.C.MustGet(flag.KeyUserModel).(models.UserModel)
 	userRespnse := UserResponse{
 		Login:     uModel.Login,
 		FirstName: uModel.FirstName,
@@ -88,7 +89,7 @@ type ProfileResponse struct {
 }
 
 func (ps *ProfileSerializer) Response(db models.UserFollowing) (ProfileResponse, error) {
-	userID := ps.C.MustGet(models.KeyUserID).(uint)
+	userID := ps.C.MustGet(flag.KeyUserID).(uint)
 	following, err := db.IsRelationship(ps.C.Request.Context(), []uint{userID, ps.UserModel.ID})
 	if err != nil {
 		return ProfileResponse{}, err
@@ -119,7 +120,7 @@ func (pls *ProfileListSerializer) Response(db models.UserFollowing) ([]ProfileRe
 	if len(lineSpeakerID) == 0 {
 		return nil, nil
 	}
-	ctx := context.WithValue(pls.C.Request.Context(), models.KeyUserID, pls.C.MustGet(models.KeyUserID).(uint))
+	ctx := context.WithValue(pls.C.Request.Context(), flag.KeyUserID, pls.C.MustGet(flag.KeyUserID).(uint))
 	speakerFollow, err := db.IsRelationshipList(ctx, lineSpeakerID)
 	if err != nil {
 		return nil, err
