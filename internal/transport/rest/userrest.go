@@ -18,7 +18,7 @@ import (
 
 // ctxTimeRequest - для инициализации ctx в запросах
 // context.WithTimeout(c.Request.Context(),ctxTimeRequest)
-const CTXUsersTimeRequest = 500 * time.Millisecond
+const CTXUsersTimeRequest = 500000 * time.Millisecond
 
 func UserBeforeRegister(router *gin.RouterGroup, db mod.UserConnect) {
 	router.POST("/signup", UserCreate(db))
@@ -42,28 +42,24 @@ func UserCreate(db mod.UserConnect) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		modelValidator := v.NewUserCreateValidator()
 		if err := modelValidator.Bind(c); err != nil {
-			c.JSON(http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
+			common.JSONWithContext(c, http.StatusUnprocessableEntity, common.NewDataErrorValidator(err))
 			return
 		}
 		var err error = nil
 		uModelFromValidator := modelValidator.Model()
 		uModelFromValidator.ID, err = db.SaveOneUser(c.Request.Context(), uModelFromValidator)
 		if err != nil {
-			if err == context.DeadlineExceeded {
-				return
-			}
-			c.JSON(http.StatusUnprocessableEntity, common.NewError("data_base", source.ErrSourceAlreadyExists))
+			common.JSONWithContext(c, http.StatusUnprocessableEntity, common.NewError("data_base", source.ErrSourceAlreadyExists))
 			return
 		}
 		autorization.SetFlagsContext(c, uModelFromValidator)
-
 		serialize := ser.TokenSerializer{c}
 		tokenResponse, err := serialize.Response()
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, common.NewError("serialize", err))
+			common.JSONWithContext(c, http.StatusInternalServerError, common.NewError("serialize", err))
 			return
 		}
-		c.JSON(http.StatusCreated, gin.H{"approve": tokenResponse})
+		common.JSONWithContext(c, http.StatusCreated, gin.H{"approve": tokenResponse})
 	}
 }
 
@@ -85,7 +81,7 @@ func UserLogin(db mod.UserConnect) gin.HandlerFunc {
 			c.JSON(http.StatusForbidden, common.NewError("login", mod.ErrModelsUserInvalidPassword))
 			return
 		}
-		autorization.SetFlagsContext(c, user)
+		c.Set(flag.KeyUserID, user.ID)
 		serialize := ser.TokenSerializer{c}
 		userResponse, err := serialize.Response()
 		if err != nil {

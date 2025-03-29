@@ -1,30 +1,24 @@
 package main
 
 import (
-	"database/sql"
+	"context"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/services/autorization"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/source"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/transport/rest"
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 	"github.com/gin-gonic/gin"
-	_ "github.com/lib/pq"
 	"log"
 )
 
 func main() {
-	db, errDB := sql.Open("postgres", `
-host=127.0.0.1 port=5433 user=postgres password=1234567 dbname=zephyr sslmode=disable`)
-	if errDB != nil {
-		log.Fatalf("db error - %v", errDB)
+	ctx := context.Background()
+	pool, err := source.InitDB(ctx, ".env")
+	if err != nil {
+		log.Fatalf("Pool: error - %v", err)
 	}
-	defer func() {
-		err := db.Close()
-		if err != nil {
-			log.Printf("db.Colse error - %v", err)
-		}
-	}()
+	defer pool.Close()
 
-	store := source.NewSQLSource(db)
+	store := source.NewSQLSource(pool)
 	router := gin.Default()
 
 	first := router.Group("/zephyr")
@@ -40,3 +34,16 @@ host=127.0.0.1 port=5433 user=postgres password=1234567 dbname=zephyr sslmode=di
 	}
 
 }
+
+//
+//db, errDB := sql.Open("postgres", `
+////host=127.0.0.1 port=5433 user=postgres password=1234567 dbname=zephyr sslmode=disable`)
+//	if errDB != nil {
+//		log.Fatalf("db error - %v", errDB)
+//	}
+//	defer func() {
+//		err := db.Close()
+//		if err != nil {
+//			log.Printf("db.Colse error - %v", err)
+//		}
+//	}()

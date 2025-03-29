@@ -52,6 +52,11 @@ type UserConnect interface {
 	LoginUserWithUpdateTime(ctx context.Context, data any) (UserModel, error)
 }
 
+// UserDelete - удаление пользователя
+type UserDelete interface {
+	RemoveUser(ctx context.Context, data any) error
+}
+
 // UserApprove - получение, обновление данных пользователя
 type UserApprove interface {
 	// FindOneUserByField - получение данных пользователя
