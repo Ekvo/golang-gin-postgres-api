@@ -198,8 +198,8 @@ type TimeRange struct {
 	EndDate   time.Time
 }
 
-func (tr *TimeRange) IsRangeZero() bool {
-	return tr.StartDate.IsZero() || tr.EndDate.IsZero()
+func (tr TimeRange) IsRangeZero() bool {
+	return tr.StartDate.IsZero() || tr.EndDate.IsZero() || tr.StartDate.After(tr.EndDate)
 }
 
 // LimitOffset - характеристики для SQL query
@@ -207,4 +207,12 @@ func (tr *TimeRange) IsRangeZero() bool {
 type LimitOffset struct {
 	Limit  uint
 	Offset uint
+}
+
+func (lo LimitOffset) IsLimit() bool {
+	return lo.Limit > 0
+}
+
+func (lo LimitOffset) IsOffset() bool {
+	return lo.Offset > 0
 }

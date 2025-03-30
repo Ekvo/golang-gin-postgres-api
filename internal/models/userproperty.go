@@ -2,7 +2,6 @@ package models
 
 import (
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
-	"time"
 )
 
 // UserProperty - свойсва для поиска списка пользователей
@@ -16,14 +15,10 @@ type UserProperty struct {
 	common.LimitOffset
 }
 
-func (up *UserProperty) NoEmpty() bool {
-	// время invaild
-	if up.IsRangeZero() {
-		up.StartDate = time.Time{}
-	}
-	return len(up.FirstName) > 0 ||
-		len(up.LastName) > 0 ||
-		!up.TimeRange.StartDate.IsZero() ||
-		up.Limit != 0 ||
-		up.Offset != 0
+func (up UserProperty) IsFirstName() bool {
+	return up.FirstName != ""
+}
+
+func (up UserProperty) IsLastName() bool {
+	return up.LastName != ""
 }

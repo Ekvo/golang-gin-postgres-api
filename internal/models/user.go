@@ -52,23 +52,21 @@ type UserConnect interface {
 	LoginUserWithUpdateTime(ctx context.Context, data any) (UserModel, error)
 }
 
-// UserDelete - удаление пользователя
-type UserDelete interface {
-	RemoveUser(ctx context.Context, data any) error
-}
-
-// UserApprove - получение, обновление данных пользователя
+// UserApprove - read(one or list of user),update, delete user
 type UserApprove interface {
-	// FindOneUserByField - получение данных пользователя
+	// FindOneUserByField - get user
 	//
-	// идея - передать данные с определенным флагом, для поиска по заданному имени столбца в базе данных
+	// idea - is to pass data with a specific flag to search for a given column name in the database
 	FindOneUserByField(ctx context.Context, data any) (UserModel, error)
 
-	// FindUserList - поиск пользователей по заданным параметрам переданным через 'data'
-	FindUserList(ctx context.Context, data any) ([]UserModel, error)
-
-	// NewDataUser - обновление данных пользователя
+	// NewDataUser - if exist -> update user in store
 	NewDataUser(ctx context.Context, data any) error
+
+	// RemoveUser - delete user from store
+	RemoveUser(ctx context.Context, data any) error
+
+	// FindUserList - get list of users by property via 'data'
+	FindUserList(ctx context.Context, data any) ([]UserModel, error)
 }
 
 // UserFollowing - обрабатывает отношение пользователей

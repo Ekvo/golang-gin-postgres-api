@@ -189,43 +189,41 @@ SELECT id,
         WHERE id_speaker = users.id) AS unique_followers
 FROM users`)
 	args := []any{}
-	if property.NoEmpty() {
-		numberOfArg := 1
-		and := false
-		query.WriteString("\nWHERE ")
-		if len(property.FirstName) > 0 {
-			query.WriteString(fmt.Sprintf("u.first_name = $%d", numberOfArg))
-			numberOfArg++
-			args = append(args, property.FirstName)
-			and = true
-		}
-		if len(property.LastName) > 0 {
-			if and {
-				query.WriteString("\nAND ")
-			}
-			query.WriteString(fmt.Sprintf("u.last_name = $%d", numberOfArg))
-			numberOfArg++
-			args = append(args, property.LastName)
-			and = true
-		}
-		if !property.StartDate.IsZero() {
-			if and {
-				query.WriteString("\nAND ")
-			}
-			query.WriteString(fmt.Sprintf("u.created_at BETWEEN $%d AND $%d", numberOfArg, numberOfArg+1))
-			numberOfArg += 2
-			args = append(args, property.StartDate)
-			args = append(args, property.EndDate)
-		}
-		if property.Limit != 0 {
-			query.WriteString(fmt.Sprintf("\nLIMIT $%d", numberOfArg))
-			numberOfArg++
-			args = append(args, property.Limit)
-		}
-		if property.Offset != 0 {
+	numberOfArg := 1
+	where := false
+	if property.IsFirstName() {
+		where = whereANDOR(&query, where, "")
+		query.WriteString(fmt.Sprintf("first_name = $%d", numberOfArg))
+		numberOfArg++
+		args = append(args, property.FirstName)
+	}
+	if property.IsLastName() {
+		where = whereANDOR(&query, where, "AND")
+		query.WriteString(fmt.Sprintf("last_name = $%d", numberOfArg))
+		numberOfArg++
+		args = append(args, property.LastName)
+	}
+	if !property.IsRangeZero() {
+		_ = whereANDOR(&query, where, "AND")
+		query.WriteString(fmt.Sprintf("created_at BETWEEN $%d AND $%d", numberOfArg, numberOfArg+1))
+		numberOfArg += 2
+		args = append(args, property.StartDate)
+		args = append(args, property.EndDate)
+	}
+	limit := false
+	if property.IsLimit() {
+		limit = true
+		query.WriteString(fmt.Sprintf("\nLIMIT $%d", numberOfArg))
+		numberOfArg++
+		args = append(args, property.Limit)
+	}
+	if property.IsOffset() {
+		if limit {
 			query.WriteString(fmt.Sprintf(" OFFSET $%d", numberOfArg))
-			args = append(args, property.Offset)
+		} else {
+			query.WriteString(fmt.Sprintf("\nOFFSET $%d", numberOfArg))
 		}
+		args = append(args, property.Offset)
 	}
 	query.WriteByte(';')
 	rows, err := s.pTx.Pool.Query(ctx, query.String(), args...)
@@ -233,6 +231,18 @@ FROM users`)
 		return nil, err
 	}
 	return scanUsers(rows)
+}
+
+// whereANDOR - add to query(ptr) SQLcommand
+//
+// if it first - field unloading - WHERE else write commandSQL(OR, AND)
+func whereANDOR(query *strings.Builder, where bool, commandSQL string) bool {
+	if !where {
+		query.WriteString("\nWHERE ")
+	} else {
+		query.WriteString(fmt.Sprintf("\n%s ", commandSQL))
+	}
+	return true
 }
 
 func scanUsers(rows pgx.Rows) ([]models.UserModel, error) {

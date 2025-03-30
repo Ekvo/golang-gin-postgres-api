@@ -3,9 +3,11 @@ package source
 import (
 	"context"
 	"fmt"
+	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 	"log"
 	"net"
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -17,7 +19,6 @@ import (
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/services/flag"
-	vr "github.com/Ekvo/golang-gin-postgres-api/internal/variables"
 )
 
 var (
@@ -39,6 +40,7 @@ func NewUser() models.UserModel {
 		FirstName: "Alex",
 		LastName:  &lastName,
 		Phone:     &phone,
+		Email:     "alex@mail.com",
 		Image:     &imageURl,
 		Bio:       &biography,
 		CreatedAt: timeCreate,
@@ -58,6 +60,7 @@ he becomes affectionate and his velvety fur immediately runs to my feet.`
 		Access:    "4",
 		FirstName: "Alex",
 		LastName:  &lastName,
+		Email:     "alex@mail.com",
 		Image:     &imageURl,
 		Bio:       &biography,
 		UpdatedAt: &timeUpdate,
@@ -357,6 +360,7 @@ func FindUserData() models.UserModel {
 		Access:            "4",
 		FirstName:         "Alex",
 		LastName:          &lastName,
+		Email:             "alex@mail.com",
 		Image:             &imageURl,
 		Bio:               &biography,
 		CreatedAt:         timeCreate,
@@ -466,19 +470,146 @@ DROP TABLE IF EXISTS users,followers,articles,articles_tags,article_favorite,com
 		} else {
 			asserts.Nil(user.Bio, "res Bio - not nil")
 		}
-		asserts.Equal(expectedUser.CreatedAt.UTC().Format(vr.RFC3339Milli), user.CreatedAt.UTC().Format(vr.RFC3339Milli), "createdAt")
+		//postgres safe time .10^6 - time.StampMicro -> 1000
+		asserts.WithinDuration(expectedUser.CreatedAt.UTC(), user.CreatedAt.UTC(), 1000)
 		if expectedUser.UpdatedAt != nil {
 			requires.NotNil(user.UpdatedAt, "expected UpdatedAt - is nil")
-			asserts.Equal(expectedUser.UpdatedAt.UTC().Format(vr.RFC3339Milli), user.UpdatedAt.UTC().Format(vr.RFC3339Milli), "UpdatedAt")
+			asserts.WithinDuration(expectedUser.UpdatedAt.UTC(), user.UpdatedAt.UTC(), 1000)
 		} else {
 			asserts.Nil(user.UpdatedAt, "res UpdatedAt - not nil")
 		}
 		if expectedUser.LastConnection != nil {
 			requires.NotNil(user.LastConnection, "expected LastConnection - is nil")
-			asserts.Equal(expectedUser.LastConnection.UTC().Format(vr.RFC3339Milli), user.LastConnection.UTC().Format(vr.RFC3339Milli), "LastConnection")
+			asserts.WithinDuration(expectedUser.LastConnection.UTC(), user.LastConnection.UTC(), 1000)
 		} else {
 			asserts.Nil(user.LastConnection, "res LastConnection - not nil")
 		}
+
 		asserts.Equal(expectedUser.NumberOfFollowers, user.NumberOfFollowers, "followers")
+	}
+}
+
+var (
+	loginList = []string{"alex", "alien", "predator", "Wayland"}
+	email     = "@gmail.com"
+)
+
+func NewUserForList(login, email string, createdAt time.Time) models.UserModel {
+	return models.UserModel{
+		Login:             login,
+		Password:          "qwer1234",
+		Access:            "4",
+		FirstName:         login,
+		Email:             email,
+		CreatedAt:         createdAt,
+		NumberOfFollowers: 1, // no use on SQLquery -> for compare in tests
+	}
+}
+
+// in in expectedRes add users lowercase by login - "aa","aaa","aab"
+var userPropertyList = []struct {
+	description string
+	ctxTimeOut  time.Duration
+	property    models.UserProperty
+	expectedRes []models.UserModel
+	msg         string
+}{
+	{
+		description: "find only -> alex",
+		ctxTimeOut:  100 * time.Second,
+		property:    models.UserProperty{FirstName: "alex"},
+		expectedRes: []models.UserModel{
+			NewUserForList("alex", "alex"+email, timeCreate),
+		},
+		msg: "found one User with name 'alex'",
+	},
+	{
+		description: "zero list",
+		ctxTimeOut:  100 * time.Second,
+		property:    models.UserProperty{FirstName: "someuser"},
+		expectedRes: []models.UserModel{},
+		msg:         "no result",
+	},
+	{
+		description: "limit, offsett -> AVP",
+		ctxTimeOut:  100 * time.Second,
+		property: models.UserProperty{
+			LimitOffset: common.LimitOffset{
+				Limit:  2,
+				Offset: 1,
+			},
+		},
+		expectedRes: []models.UserModel{
+			NewUserForList("alien", "alien"+email, timeCreate.Add(time.Hour)),
+			NewUserForList("predator", "predator"+email, timeCreate.Add(time.Hour*2)),
+		},
+		msg: "found two Users with name 'alien','predator'",
+	},
+	{
+		description: "time range, limit, offsett -> Wayland",
+		ctxTimeOut:  100 * time.Second,
+		property: models.UserProperty{
+			TimeRange: common.TimeRange{
+				StartDate: timeCreate.Add(time.Hour),
+				EndDate:   timeCreate.Add(time.Hour * 4),
+			},
+			LimitOffset: common.LimitOffset{
+				Limit:  1,
+				Offset: 2,
+			},
+		},
+		expectedRes: []models.UserModel{
+			NewUserForList("Wayland", "Wayland"+email, timeCreate.Add(time.Hour*3)),
+		},
+		msg: "found one User with name 'Wayland'",
+	},
+}
+
+func TestSQLSource_FindUserList(t *testing.T) {
+	pool, err := initDBForTest()
+	if err != nil {
+		log.Fatalf("source_test: pgxpool error - %v", err)
+	}
+	defer pool.Close()
+	base := NewSQLSource(pool)
+	ctx := context.Background()
+
+	// delete tables
+	base.pTx.Pool.Exec(ctx, `
+DROP TABLE IF EXISTS users,followers,articles,articles_tags,article_favorite,comments,tags;`)
+
+	asserts := assert.New(t)
+	requires := require.New(t)
+
+	err = base.NewTable(ctx, tableUsers, tableFollowers)
+	requires.NoError(err, "create table error")
+
+	//expectedUserList := make([]models.UserModel, len(loginList))
+	for i, login := range loginList {
+		//expectedUserList[i] = NewUserForList(login, login+email, timeCreate.Add(time.Hour*time.Duration(i)))
+		_, err := base.SaveOneUser(ctx, NewUserForList(login, login+email, timeCreate.Add(time.Hour*time.Duration(i))))
+		requires.NoError(err, fmt.Sprintf("create users step %d error", i))
+		//expectedUserList[i].ID = id
+	}
+
+	for i, property := range userPropertyList {
+		log.Printf("\t%d test: %s\n", i+1, property.description)
+		ctx, cancel := context.WithTimeout(ctx, property.ctxTimeOut)
+		defer cancel()
+
+		resUserList, err := base.FindUserList(ctx, property.property)
+		requires.NoError(err, "Error "+property.msg)
+		requires.Equal(len(property.expectedRes), len(resUserList), "Dif lenght array "+property.msg)
+
+		sort.Slice(resUserList, func(i, j int) bool { return resUserList[i].Login < resUserList[j].Login })
+
+		for i, expUser := range property.expectedRes {
+			asserts.Equal(expUser.Login, resUserList[i].Login, "login")
+			asserts.Equal(expUser.Password, resUserList[i].Password, "password")
+			asserts.Equal(expUser.Access, resUserList[i].Access, "access")
+			asserts.Equal(expUser.Email, resUserList[i].Email, "email")
+			asserts.WithinDuration(expUser.CreatedAt, resUserList[i].CreatedAt, 1000)
+			asserts.Equal(expUser.NumberOfFollowers, resUserList[i].NumberOfFollowers, "follower")
+		}
 	}
 }
