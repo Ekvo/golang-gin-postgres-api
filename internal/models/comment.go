@@ -1,3 +1,4 @@
+// describes - object 'CommentModel' wiht interfaces
 package models
 
 import (
@@ -16,29 +17,27 @@ type CommentModel struct {
 	CreatedAt time.Time
 	UpdatedAt *time.Time
 
-	//maxlenght 2048
 	Body string
 }
 
-type CommentUpdate interface {
+// CommentNew - save comment in store with return commentID
+type CommentNew interface {
 	SaveOneComment(ctx context.Context, data any) (uint, error)
-
-	NewDataComment(ctx context.Context, data any) error
-
-	EndCommentLife(ctx context.Context, data any) error
 }
 
+// CommentFind - read comment from store
 type CommentFind interface {
 	FindOneComment(ctx context.Context, data any) (CommentModel, error)
+
 	FindCommentList(ctx context.Context, data any) ([]CommentModel, error)
 }
 
-type CommentUpdateFind interface {
-	CommentUpdate
-	CommentFind
+// CommentChange -  if exist update comment in store
+type CommentChange interface {
+	NewDataComment(ctx context.Context, data any) error
 }
 
-type CommentWihtAutor interface {
-	CommentUpdateFind
-	UserApproveFollowing
+// CommentRemove - if exist delete comment from store
+type CommentRemove interface {
+	EndCommentLife(ctx context.Context, data any) error
 }

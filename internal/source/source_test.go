@@ -3,7 +3,6 @@ package source
 import (
 	"context"
 	"fmt"
-	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 	"log"
 	"net"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +17,7 @@ import (
 
 	"github.com/Ekvo/golang-gin-postgres-api/internal/models"
 	"github.com/Ekvo/golang-gin-postgres-api/internal/services/flag"
+	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
 
 var (
@@ -161,7 +160,7 @@ var qq = []struct {
 			LastConnection: &timeLastConnection,
 		},
 		expectedData: models.UserModel{},
-		expectedErr:  ErrSourceTransaction,
+		expectedErr:  ErrSourceNotFound,
 		msg:          "invalid login, err - \"resource not found\"",
 	},
 	{ //5
@@ -185,7 +184,7 @@ var qq = []struct {
 		ctxTimeOut:   100 * time.Second,
 		startData:    models.UserModel{Login: "alien"},
 		expectedData: models.UserModel{},
-		expectedErr:  pgx.ErrNoRows,
+		expectedErr:  ErrSourceNotFound,
 		msg:          "invalid find user, return err - \"resource not found\"",
 	},
 	{ //7
@@ -245,7 +244,7 @@ var qq = []struct {
 		ctxTimeOut:   100 * time.Second,
 		startData:    []uint{1, 1},
 		expectedData: nil,
-		expectedErr:  ErrSourceTransaction,
+		expectedErr:  ErrSourceNotFound,
 		msg:          "invalid  unsubscribe, err - \"resource not found\"",
 	},
 	{ //12
@@ -273,7 +272,7 @@ var qq = []struct {
 		msg:          "valid - subscribe, alexMiu is now subscribe on alexMiu",
 	},
 	{ //14
-		description: `new subscribe - valid`,
+		description: `new subscribe - invalid (already exist)`,
 		init: func(ctx context.Context, pool SQLSource, data any) (any, error) {
 			return nil, pool.NewRelationship(ctx, data)
 		},
@@ -281,11 +280,23 @@ var qq = []struct {
 		ctxTimeOut:   100 * time.Second,
 		startData:    []uint{1, 1},
 		expectedData: nil,
-		expectedErr:  ErrSourceTransaction,
+		expectedErr:  ErrSourceAlreadyExists,
 		msg:          "invalid  subscribe, alexMiu already subscribe on alexMiu",
 	},
 	{ //15
-		description: `new subscribe - valid`,
+		description: `new subscribe - invalid (not exist)`,
+		init: func(ctx context.Context, pool SQLSource, data any) (any, error) {
+			return nil, pool.NewRelationship(ctx, data)
+		},
+		ctxKeyVal:    nil,
+		ctxTimeOut:   100 * time.Second,
+		startData:    []uint{1, 2},
+		expectedData: nil,
+		expectedErr:  ErrSourceNotFound,
+		msg:          "invalid  subscribe, err - \"resource not found\"",
+	},
+	{ //16
+		description: `new subscribe - invalid (data)`,
 		init: func(ctx context.Context, pool SQLSource, data any) (any, error) {
 			return nil, pool.NewRelationship(ctx, data)
 		},
@@ -293,10 +304,10 @@ var qq = []struct {
 		ctxTimeOut:   100 * time.Second,
 		startData:    []uint{1},
 		expectedData: nil,
-		expectedErr:  ErrSourceRelationship, //!!!!!
+		expectedErr:  ErrSourceRelationship,
 		msg:          "invalid array, err - \"is impossible - update or get Relationship with current data\"",
 	},
-	{ //16
+	{ //17
 		description: `Delete user - valid`,
 		init: func(ctx context.Context, pool SQLSource, data any) (any, error) {
 			return nil, pool.RemoveUser(ctx, data)
@@ -308,7 +319,7 @@ var qq = []struct {
 		expectedErr:  nil,
 		msg:          "valid  deleted, alexMiu now not on 'users'",
 	},
-	{ //17
+	{ //18
 		description: `Delete user - invalid`,
 		init: func(ctx context.Context, pool SQLSource, data any) (any, error) {
 			return nil, pool.RemoveUser(ctx, data)
@@ -317,7 +328,7 @@ var qq = []struct {
 		ctxTimeOut:   100 * time.Second,
 		startData:    uint(1),
 		expectedData: nil,
-		expectedErr:  ErrSourceTransaction,
+		expectedErr:  ErrSourceNotFound,
 		msg:          "valid  deleted, alexMiu - \"resource not found\" ",
 	},
 }
@@ -343,6 +354,10 @@ DROP TABLE IF EXISTS users,followers,articles,articles_tags,article_favorite,com
 		defer cancel()
 		if query.ctxKeyVal != nil {
 			ctx = context.WithValue(ctx, query.ctxKeyVal[0], query.ctxKeyVal[1])
+		}
+
+		if i == 9 {
+			fmt.Printf("")
 		}
 
 		res, err := query.init(ctx, base, query.startData)
@@ -394,7 +409,7 @@ var userFindTeasData = []struct {
 		ctxTimeOut:   100 * time.Second,
 		startData:    models.UserModel{Login: "predator"},
 		expectedData: models.UserModel{},
-		expectedErr:  pgx.ErrNoRows,
+		expectedErr:  ErrSourceNotFound,
 		msg:          "invalid find - ans empty with error - no eows",
 	},
 }
@@ -496,17 +511,20 @@ var (
 
 func NewUserForList(login, email string, createdAt time.Time) models.UserModel {
 	return models.UserModel{
-		Login:             login,
-		Password:          "qwer1234",
-		Access:            "4",
-		FirstName:         login,
-		Email:             email,
-		CreatedAt:         createdAt,
-		NumberOfFollowers: 1, // no use on SQLquery -> for compare in tests
+		Login:     login,
+		Password:  "qwer1234",
+		Access:    "4",
+		FirstName: login,
+		Email:     email,
+		CreatedAt: createdAt,
+
+		// no use on SQLquery -> for compare in tests.
+		// everyone subscribes to themselves
+		NumberOfFollowers: 1,
 	}
 }
 
-// in in expectedRes add users lowercase by login - "aa","aaa","aab"
+// to expectedRes add users lowercase by login - "aa","aaa","aab"
 var userPropertyList = []struct {
 	description string
 	ctxTimeOut  time.Duration

@@ -14,11 +14,6 @@ import (
 	"github.com/Ekvo/golang-gin-postgres-api/pkg/common"
 )
 
-// ErrSourceAlreadyExists - во время регистрации(signup)
-var ErrSourceAlreadyExists = errors.New("resource already exists")
-
-var ErrSourceNotFound = errors.New("resource not found")
-
 // ErrSourceRelationship - переданны некорректные данные для реализации отношений пользователей
 var ErrSourceRelationship = errors.New("is impossible - update or get Relationship with current data")
 
@@ -58,7 +53,10 @@ FROM to_users;`,
 			common.WhenEmptyStringThenNULL(userModel.Bio),   //9
 			userModel.CreatedAt,                             //10
 		).Scan(&userModel.ID)
-		return err
+		if err != nil {
+			return ErrSourceAlreadyExists
+		}
+		return nil
 	}
 	return userModel.ID, s.pTx.Transaction(ctx, insertUser)
 }
@@ -77,7 +75,10 @@ WHERE login = $1
 RETURNING id,hash_password;`,
 			userModel.Login, userModel.LastConnection,
 		).Scan(&user.ID, &user.Password)
-		return err
+		if err != nil {
+			return ErrSourceNotFound
+		}
+		return nil
 	}
 	return user, s.pTx.Transaction(ctx, loginWithUpdateUser)
 }
@@ -147,7 +148,7 @@ func scanUserModel[T SQLScan](row T) (models.UserModel, error) {
 		uModel    models.UserModel
 		ptrFields UserPtrField
 	)
-	err := row.Scan(
+	if err := row.Scan(
 		&uModel.ID,
 		&uModel.Login,
 		&uModel.Password,
@@ -162,9 +163,11 @@ func scanUserModel[T SQLScan](row T) (models.UserModel, error) {
 		&ptrFields.UpdateAt,
 		&ptrFields.LastConnection,
 		&uModel.NumberOfFollowers,
-	)
+	); err != nil {
+		return uModel, ErrSourceNotFound
+	}
 	ptrFields.toUserModel(&uModel)
-	return uModel, err
+	return uModel, nil
 }
 
 func (s SQLSource) FindUserList(ctx context.Context, data any) ([]models.UserModel, error) {
@@ -207,8 +210,7 @@ FROM users`)
 		_ = whereANDOR(&query, where, "AND")
 		query.WriteString(fmt.Sprintf("created_at BETWEEN $%d AND $%d", numberOfArg, numberOfArg+1))
 		numberOfArg += 2
-		args = append(args, property.StartDate)
-		args = append(args, property.EndDate)
+		args = append(args, property.StartDate, property.EndDate)
 	}
 	limit := false
 	if property.IsLimit() {
@@ -245,6 +247,10 @@ func whereANDOR(query *strings.Builder, where bool, commandSQL string) bool {
 	return true
 }
 
+func limitOffsetToQuery(query *strings.Builder, lo common.LimitOffset, numberOfArg int) {
+
+}
+
 func scanUsers(rows pgx.Rows) ([]models.UserModel, error) {
 	var users []models.UserModel
 	for rows.Next() {
@@ -263,7 +269,7 @@ func scanUsers(rows pgx.Rows) ([]models.UserModel, error) {
 func (s SQLSource) NewDataUser(ctx context.Context, data any) error {
 	userModel := data.(models.UserModel)
 	updateUser := func(ctx context.Context) error {
-		userID := uint(0)
+		userID := uint(0) // check RETURNING
 		err := s.pTx.Tx.QueryRow(ctx, `
 UPDATE users
 SET login        = $2,
@@ -290,7 +296,7 @@ RETURNING id;`,
 			common.WhenEmptyStringThenNULL(userModel.Bio),   //10
 			userModel.UpdatedAt,                             //11
 		).Scan(&userID)
-		if err != nil || userID != userModel.ID {
+		if err != nil {
 			return ErrSourceNotFound
 		}
 		return nil
@@ -305,13 +311,13 @@ RETURNING id;`,
 func (s SQLSource) RemoveUser(ctx context.Context, data any) error {
 	userID := data.(uint)
 	deleteUser := func(ctx context.Context) error {
-		delID := uint(0)
+		delID := uint(0) // check RETURNING
 		err := s.pTx.Tx.QueryRow(ctx, `
 DELETE 
 FROM users 
 WHERE id = $1 
 RETURNING id;`, userID).Scan(&delID)
-		if err != nil || delID != userID {
+		if err != nil {
 			return ErrSourceNotFound
 		}
 		_, err = s.pTx.Tx.Exec(ctx, `
@@ -326,20 +332,36 @@ WHERE id_speaker = $1;`, userID)
 	return s.pTx.Transaction(ctx, deleteUser)
 }
 
-// IsRelationship - создает уникальную связку ключей (id_user,id_folower)
+// IsRelationship - creates a unique keychain (id_user,id_folower)
+//
 // data[0] - follower, data[1] - speaker
 func (s SQLSource) NewRelationship(ctx context.Context, data any) error {
 	followerSpeaker := data.([]uint)
 	if len(followerSpeaker) != 2 {
 		return ErrSourceRelationship
 	}
+	speakerID, followerID := uint(0), uint(0) // check RETURNING
 	updateRelationship := func(ctx context.Context) error {
-		_, err := s.pTx.Tx.Exec(ctx, `
+		err := s.pTx.Tx.QueryRow(ctx, `
 INSERT INTO followers (id_speaker, id_follower)
-VALUES ($1, $2);`, followerSpeaker[1], followerSpeaker[0])
-		return err
+SELECT $1, $2
+WHERE EXISTS (SELECT id from users where id = $1)
+  AND EXISTS (SELECT id from users where id = $2)
+RETURNING *;`, followerSpeaker[1], followerSpeaker[0]).Scan(&speakerID, &followerID)
+		return sourceError(err)
 	}
 	return s.pTx.Transaction(ctx, updateRelationship)
+}
+
+// sourceError - if Query return some error -> set some one Error from package source
+func sourceError(err error) error {
+	if err == pgx.ErrNoRows {
+		return ErrSourceNotFound
+	}
+	if err != nil {
+		return ErrSourceAlreadyExists
+	}
+	return nil
 }
 
 // IsRelationship - проверяет наличие уникальной связки ключей (id_user,id_folower)
@@ -387,14 +409,14 @@ func (s SQLSource) EndRelationship(ctx context.Context, data any) error {
 	if len(followerSpeaker) != 2 {
 		return ErrSourceRelationship
 	}
-	delFollower := uint(0)
+	speakerID, followerID := uint(0), uint(0)
 	deleteRelationship := func(ctx context.Context) error {
 		err := s.pTx.Tx.QueryRow(ctx, `
 DELETE
 FROM followers
 WHERE (id_speaker, id_follower) = ($1, $2)
-RETURNING id_follower;`, followerSpeaker[1], followerSpeaker[0]).Scan(&delFollower)
-		if err != nil || delFollower != followerSpeaker[0] {
+RETURNING *;`, followerSpeaker[1], followerSpeaker[0]).Scan(&speakerID, &followerID)
+		if err != nil {
 			return ErrSourceNotFound
 		}
 		return nil

@@ -2,14 +2,13 @@ package source
 
 import (
 	"context"
-	"errors"
 	"log"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var ErrSourceTransaction = errors.New("transaction is rollback")
+//var ErrSourceTransaction = errors.New("transaction is rollback")
 
 type poolWithTx struct {
 	*pgxpool.Pool
@@ -39,10 +38,10 @@ func (pt *poolWithTx) Transaction(ctx context.Context, execute func(ctx context.
 		}
 	}()
 	pt.Tx = tx
-
-	if err = execute(ctx); err != nil {
-		//err = fmt.Errorf("Transaction error - %w", err)
-		err = ErrSourceTransaction
-	}
+	err = execute(ctx)
+	//if err = execute(ctx); err != nil {
+	//	//err = fmt.Errorf("Transaction error - %w", err)
+	//	err = ErrSourceTransaction
+	//}
 	return err
 }

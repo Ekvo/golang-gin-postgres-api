@@ -2,9 +2,15 @@ package source
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrSourceAlreadyExists - во время регистрации(signup)
+var ErrSourceAlreadyExists = errors.New("resource already exists")
+
+var ErrSourceNotFound = errors.New("resource not found")
 
 type SQLSource struct {
 	pTx poolWithTx
